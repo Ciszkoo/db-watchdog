@@ -14,11 +14,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Setup Scala + sbt
+        uses: coursier/setup-action@v2
         with:
-          distribution: temurin
           java-version: 21
+          scala-version: 3.8.1
+          coursier-version: 2.1.2
 
       - name: Cache sbt
         uses: actions/cache@v4
