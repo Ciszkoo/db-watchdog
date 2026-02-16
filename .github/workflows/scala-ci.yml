@@ -14,13 +14,22 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Scala + sbt
-        uses: coursier/setup-action@v2
+      # Setup Java 21
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: 21
-          scala-version: 3.8.1
-          coursier-version: 2.1.2
 
+      # Install sbt
+      - name: Install sbt
+        run: |
+          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
+          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y sbt
+
+      # Cache sbt dependencies
       - name: Cache sbt
         uses: actions/cache@v4
         with:
@@ -32,11 +41,13 @@ jobs:
           restore-keys: |
             sbt-${{ runner.os }}-
 
+      # Run scalafmt check
       - name: Scalafmt check
         run: |
           cd server
           sbt scalafmtCheckAll
 
+      # Run scalafix check
       - name: Scalafix check
         run: |
           cd server
