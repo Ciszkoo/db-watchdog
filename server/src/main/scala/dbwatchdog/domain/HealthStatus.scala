@@ -1,8 +1,7 @@
 package dbwatchdog.domain
 
-import io.circe.Decoder
-import io.circe.Encoder
 import io.circe.generic.semiauto.*
+import io.circe.{Decoder, Encoder}
 
 final case class HealthStatus(
     status: String,
