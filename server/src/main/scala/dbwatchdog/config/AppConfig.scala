@@ -1,9 +1,7 @@
 package dbwatchdog.config
 
-import com.comcast.ip4s.Host
-import com.comcast.ip4s.Port
-import pureconfig.ConfigReader
-import pureconfig.ConfigSource
+import com.comcast.ip4s.{Host, Port}
+import pureconfig.{ConfigReader, ConfigSource}
 
 case class AppConfig(
     server: AppConfig.ServerConfig
