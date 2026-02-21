@@ -22,13 +22,7 @@ object UserRoutes {
       case req @ POST -> Root / "users" / "sync" as authUser => {
         val res = for {
           syncReq <- req.req.as[SyncUserRequest]
-          user <- userService.syncUser(
-            syncReq.keycloakId,
-            syncReq.email,
-            syncReq.firstName,
-            syncReq.lastName,
-            syncReq.team
-          )
+          user <- userService.syncUser(syncReq.toUpsertInput)
           response <- Ok(user.asJson)
         } yield response
 

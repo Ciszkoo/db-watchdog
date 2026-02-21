@@ -7,5 +7,5 @@ case class Services(users: UserService)
 
 object Services {
   def make(repos: Repositories, db: Database): Services =
-    Services(users = UserService.make(repos.users, db))
+    Services(users = UserService.make(repos.users, repos.teams, db))
 }
