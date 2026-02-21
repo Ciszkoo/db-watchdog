@@ -9,6 +9,7 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { AuthProvider } from "./auth/AuthProvider";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -33,7 +34,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
+        <AuthProvider>{children}</AuthProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -72,4 +73,12 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       )}
     </main>
   );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <p>Loading...</p>
+    </div>
+  )
 }
