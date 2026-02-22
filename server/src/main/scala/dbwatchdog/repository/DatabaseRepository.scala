@@ -17,7 +17,6 @@ trait DatabaseRepository extends TableFragment[UUID, Database] {
     "engine",
     "host",
     "port",
-    "password",
     "\"user\"",
     "password",
     "\"schema\"",
