@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "54320:5432"
     volumes:
       - "./docker/postgres/setup.sh:/docker-entrypoint-initdb.d/setup.sh"
     healthcheck:
@@ -27,3 +27,19 @@ services:
     command: start-dev --http-port=8180 --import-realm
     volumes:
       - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+
+  external-pg-1:
+    image: postgres:16-alpine
+    container_name: db-watchdog-external-pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "54321:5432"
+    volumes:
+      - "./docker/postgres/setup-external.sh:/docker-entrypoint-initdb.d/setup.sh"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d external_db -h localhost -p 5432 || exit 1" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
