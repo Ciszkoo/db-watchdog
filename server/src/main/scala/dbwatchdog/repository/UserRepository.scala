@@ -26,14 +26,15 @@ trait UserRepository extends TableFragment[UUID, User] {
       keycloakId: String,
       email: String,
       firstName: String,
-      lastName: String
+      lastName: String,
+      teamId: UUID
   ): ConnectionIO[User]
 
   def update(
       id: UUID,
       firstName: String,
       lastName: String,
-      team: String
+      teamId: UUID
   ): ConnectionIO[User]
 
   def upsert(
@@ -51,20 +52,29 @@ object UserRepository {
         keycloakId: String,
         email: String,
         firstName: String,
-        lastName: String
+        lastName: String,
+        teamId: UUID
     ): ConnectionIO[User] =
-      (fr"INSERT INTO users" ++ insertColsF ++
-        fr"VALUES ($keycloakId, $email, $firstName, $lastName, NOW(), NOW())").update
-        .withUniqueGeneratedKeys[User](columns*)
+      (fr"""
+        INSERT INTO users (keycloak_id, email, first_name, last_name, team_id)
+        VALUES ($keycloakId, $email, $firstName, $lastName, $teamId)
+      """ ++ returningF)
+        .query[User]
+        .unique
 
     def update(
         id: UUID,
         firstName: String,
         lastName: String,
-        team: String
+        teamId: UUID
     ): ConnectionIO[User] =
-      (fr"UPDATE users SET" ++
-        fr"first_name = $firstName, last_name = $lastName, team = $team, updated_at = NOW()" ++
+      (fr"""
+        UPDATE users SET
+          first_name = $firstName,
+          last_name = $lastName,
+          team_id = $teamId,
+          updated_at = NOW()
+      """ ++
         Fragments.whereAnd(fr"id = $id") ++ returningF)
         .query[User]
         .unique
