@@ -1,0 +1,104 @@
+package dbwatchdog.support
+
+import cats.effect.{IO, Resource}
+import doobie.ConnectionIO
+import doobie.Transactor
+import doobie.implicits.*
+import org.testcontainers.containers.PostgreSQLContainer
+import org.testcontainers.utility.DockerImageName
+import weaver.Expectations
+import weaver.IOSuite
+
+import dbwatchdog.config.AppConfig
+import dbwatchdog.database.Migration
+
+final class ScalaPostgresContainer(image: DockerImageName)
+    extends PostgreSQLContainer[ScalaPostgresContainer](image)
+
+trait PostgresIntegrationSuite extends IOSuite {
+  type Res = IntegrationDb
+
+  override def sharedResource: Resource[IO, IntegrationDb] =
+    IntegrationDb.resource
+
+  def withCleanDb(
+      db: IntegrationDb
+  )(run: IntegrationDb => IO[Expectations]): IO[Expectations] =
+    db.reset *> run(db)
+}
+
+final case class IntegrationDb(
+    xa: Transactor[IO],
+    config: AppConfig
+) {
+  def transact[A](query: ConnectionIO[A]): IO[A] =
+    query.transact(xa)
+
+  def reset: IO[Unit] =
+    sql"TRUNCATE TABLE users, teams, databases CASCADE".update.run
+      .transact(xa)
+      .void
+
+  def tableExists(tableName: String): IO[Boolean] =
+    sql"""
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = $tableName
+      )
+    """.query[Boolean].unique.transact(xa)
+}
+
+object IntegrationDb {
+  def resource: Resource[IO, IntegrationDb] =
+    for {
+      container <- postgresContainer
+      config = AppConfig(
+        server = AppConfig.ServerConfig(host = "127.0.0.1", port = 8080),
+        db = AppConfig.DatabaseConfig(
+          host = container.getHost,
+          port = container.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT),
+          user = container.getUsername,
+          password = container.getPassword,
+          schema = "public",
+          threadPoolSize = 2
+        ),
+        keycloak = AppConfig.KeycloakConfig()
+      )
+      _ <- Resource.eval {
+        given AppConfig = config
+        Migration.migrate.void
+      }
+      xa <- Resource.pure[IO, Transactor[IO]](
+        {
+          val properties = java.util.Properties()
+          properties.setProperty("user", config.db.user)
+          properties.setProperty("password", config.db.password)
+
+          Transactor.fromDriverManager[IO](
+            "org.postgresql.Driver",
+            config.db.url,
+            properties,
+            None
+          )
+        }
+      )
+    } yield IntegrationDb(xa = xa, config = config)
+
+  private def postgresContainer: Resource[IO, ScalaPostgresContainer] =
+    Resource.make {
+      IO.blocking {
+        val container =
+          new ScalaPostgresContainer(
+            DockerImageName.parse("postgres:16-alpine")
+          )
+            .withDatabaseName("public")
+            .withUsername("test")
+            .withPassword("test")
+        container.start()
+        container
+      }
+    } { container =>
+      IO.blocking(container.stop()).handleError(_ => ())
+    }
+}

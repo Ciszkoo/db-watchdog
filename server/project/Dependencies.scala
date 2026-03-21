@@ -11,6 +11,8 @@ object Dependencies {
     val postgresql = "42.7.8"
     val doobie = "1.0.0-RC10"
     val jwt = "9.4.5"
+    val weaver = "0.11.0"
+    val testcontainers = "2.0.4"
   }
 
   val dependencies = Seq(
@@ -43,5 +45,10 @@ object Dependencies {
 
     // JWT for Keycloak token validation
     "com.github.jwt-scala" %% "jwt-circe" % Versions.jwt
+  )
+
+  val testDependencies = Seq(
+    "org.typelevel" %% "weaver-cats" % Versions.weaver % "test,it",
+    "org.testcontainers" % "testcontainers-postgresql" % Versions.testcontainers % "it"
   )
 }

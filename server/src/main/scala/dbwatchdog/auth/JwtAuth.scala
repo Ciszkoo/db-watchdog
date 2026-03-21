@@ -94,8 +94,7 @@ object JwtAuth {
             decode[AuthUser](json.noSpaces).toOption
           }
       }
-      .handleErrorWith { error =>
-        Async[IO].pure(None)
-      }
+      .attempt
+      .map(_.toOption.flatten)
   }
 }

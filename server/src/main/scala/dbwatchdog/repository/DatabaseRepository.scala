@@ -32,7 +32,7 @@ object DatabaseRepository {
   def make: DatabaseRepository = new DatabaseRepository {
 
     def insert(input: CreateDatabase): ConnectionIO[Database] =
-      (fr"INSERT INTO" ++ tableF ++ fr"(engine, host, port, \"user\", password, \"schema\")" ++
+      (fr"INSERT INTO" ++ tableF ++ fr"""(engine, host, port, "user", password, "schema")""" ++
         fr"VALUES (${input.engine}, ${input.host}, ${input.port}, ${input.user}, ${input.password}, ${input.schema})" ++
         returningF)
         .query[Database]
