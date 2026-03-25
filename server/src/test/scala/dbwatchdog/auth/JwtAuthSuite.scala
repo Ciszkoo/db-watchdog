@@ -76,6 +76,12 @@ object JwtAuthSuite extends SimpleIOSuite {
     } yield expect(response.status == Status.NotFound)
   }
 
+  test("decodeToken returns None for invalid input") {
+    for {
+      result <- JwtAuth.decodeToken("not-a-jwt")
+    } yield expect(result.isEmpty)
+  }
+
   test("falls through when the authorization scheme is not Bearer") {
     given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(
       summon[AppConfig.KeycloakConfig]
@@ -122,20 +128,4 @@ object JwtAuthSuite extends SimpleIOSuite {
       expect(body == s"${AuthTestSupport.authUser.username}:auditor,user")
   }
 
-  test("returns None when token validation raises unexpectedly") {
-    val method = classOf[dbwatchdog.auth.JwtAuth$].getDeclaredMethod(
-      "validateToken",
-      classOf[String],
-      classOf[AppConfig.KeycloakConfig]
-    )
-    method.setAccessible(true)
-
-    val io = method
-      .invoke(JwtAuth, null, summon[AppConfig.KeycloakConfig])
-      .asInstanceOf[IO[Option[AuthUser]]]
-
-    for {
-      result <- io
-    } yield expect(result.isEmpty)
-  }
 }

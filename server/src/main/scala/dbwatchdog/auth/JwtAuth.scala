@@ -72,15 +72,11 @@ object JwtAuth {
       }
 
     maybeToken match
-      case Some(token) => validateToken(token, config)
+      case Some(token) => decodeToken(token)
       case None        => Async[IO].pure(None)
-
   }
 
-  private def validateToken(
-      token: String,
-      config: KeycloakConfig
-  ): IO[Option[AuthUser]] = {
+  private[auth] def decodeToken(token: String): IO[Option[AuthUser]] =
     Async[IO]
       .delay {
         // Temporary no signature validation for dev simplicity
@@ -96,5 +92,4 @@ object JwtAuth {
       }
       .attempt
       .map(_.toOption.flatten)
-  }
 }

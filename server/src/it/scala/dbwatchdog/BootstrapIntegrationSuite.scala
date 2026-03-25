@@ -51,8 +51,7 @@ object BootstrapIntegrationSuite extends PostgresIntegrationSuite {
     )
 
     for {
-      _ <- IO.blocking(setMainAppConfig(config))
-      fiber <- Main.run(Nil).start
+      fiber <- Main.runWithConfig(using config).start
       response <- requestUntilOk(port)
       _ <- fiber.cancel
       outcome <- fiber.join
@@ -89,11 +88,5 @@ object BootstrapIntegrationSuite extends PostgresIntegrationSuite {
     val socket = ServerSocket(0)
     try socket.getLocalPort
     finally socket.close()
-  }
-
-  private def setMainAppConfig(config: dbwatchdog.config.AppConfig): Unit = {
-    val field = classOf[dbwatchdog.Main$].getDeclaredField("appConfig$lzy1")
-    field.setAccessible(true)
-    field.set(dbwatchdog.Main, config)
   }
 }
