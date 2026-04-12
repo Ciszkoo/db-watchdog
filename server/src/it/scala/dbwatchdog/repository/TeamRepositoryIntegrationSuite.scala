@@ -8,37 +8,45 @@ object TeamRepositoryIntegrationSuite extends PostgresIntegrationSuite {
   private val repo = TeamRepository.make
 
   test("create inserts a team") { db =>
-    val teamName = uniqueTeamName("backend")
+    withCleanDb(db) { db =>
+      val teamName = uniqueTeamName("backend")
 
-    for {
-      created <- db.transact(repo.create(teamName))
-    } yield expect(created.name == teamName)
+      for {
+        created <- db.transact(repo.create(teamName))
+      } yield expect(created.name == teamName)
+    }
   }
 
   test("findByName returns an existing team") { db =>
-    val teamName = uniqueTeamName("backend")
+    withCleanDb(db) { db =>
+      val teamName = uniqueTeamName("backend")
 
-    for {
-      created <- db.transact(repo.create(teamName))
-      found <- db.transact(repo.findByName(teamName))
-    } yield expect(found.contains(created))
+      for {
+        created <- db.transact(repo.create(teamName))
+        found <- db.transact(repo.findByName(teamName))
+      } yield expect(found.contains(created))
+    }
   }
 
   test("findOrCreate inserts a team when it does not exist") { db =>
-    val teamName = uniqueTeamName("backend")
+    withCleanDb(db) { db =>
+      val teamName = uniqueTeamName("backend")
 
-    for {
-      created <- db.transact(repo.findOrCreate(teamName))
-    } yield expect(created.name == teamName)
+      for {
+        created <- db.transact(repo.findOrCreate(teamName))
+      } yield expect(created.name == teamName)
+    }
   }
 
   test("findOrCreate returns the existing team when it already exists") { db =>
-    val teamName = uniqueTeamName("backend")
+    withCleanDb(db) { db =>
+      val teamName = uniqueTeamName("backend")
 
-    for {
-      existing <- db.transact(repo.create(teamName))
-      reused <- db.transact(repo.findOrCreate(teamName))
-    } yield expect(reused.id == existing.id)
+      for {
+        existing <- db.transact(repo.create(teamName))
+        reused <- db.transact(repo.findOrCreate(teamName))
+      } yield expect(reused.id == existing.id)
+    }
   }
 
   private def uniqueTeamName(prefix: String): String =

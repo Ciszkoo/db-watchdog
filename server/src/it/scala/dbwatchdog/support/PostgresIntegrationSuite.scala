@@ -1,5 +1,6 @@
 package dbwatchdog.support
 
+import cats.effect.std.Semaphore
 import cats.effect.{IO, Resource}
 import doobie.ConnectionIO
 import doobie.Transactor
@@ -24,12 +25,13 @@ trait PostgresIntegrationSuite extends IOSuite {
   def withCleanDb(
       db: IntegrationDb
   )(run: IntegrationDb => IO[Expectations]): IO[Expectations] =
-    db.reset *> run(db)
+    db.resetLock.permit.use(_ => db.reset *> run(db))
 }
 
 final case class IntegrationDb(
     xa: Transactor[IO],
-    config: AppConfig
+    config: AppConfig,
+    resetLock: Semaphore[IO]
 ) {
   def transact[A](query: ConnectionIO[A]): IO[A] =
     query.transact(xa)
@@ -53,6 +55,7 @@ object IntegrationDb {
   def resource: Resource[IO, IntegrationDb] =
     for {
       container <- postgresContainer
+      resetLock <- Resource.eval(Semaphore[IO](1))
       config = AppConfig(
         server = AppConfig.ServerConfig(host = "127.0.0.1", port = 8080),
         db = AppConfig.DatabaseConfig(
@@ -83,7 +86,7 @@ object IntegrationDb {
           )
         }
       )
-    } yield IntegrationDb(xa = xa, config = config)
+    } yield IntegrationDb(xa = xa, config = config, resetLock = resetLock)
 
   private def postgresContainer: Resource[IO, ScalaPostgresContainer] =
     Resource.make {
