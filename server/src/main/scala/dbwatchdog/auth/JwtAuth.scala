@@ -143,8 +143,11 @@ object JwtAuth {
 
     val audience =
       Option(claims.getAudience).map(_.asScala.toSet).getOrElse(Set.empty)
-    if !audience.contains(config.audience) then
-      throw IllegalArgumentException("JWT audience mismatch")
+    val audienceMatches = audience.contains(config.audience)
+    val authorizedPartyMatches =
+      Option(claims.getStringClaim("azp")).contains(config.authorizedParty)
+    if !audienceMatches && !authorizedPartyMatches then
+      throw IllegalArgumentException("JWT audience and azp mismatch")
 
     val expiresAt = Option(claims.getExpirationTime)
       .map(_.toInstant)
@@ -152,11 +155,10 @@ object JwtAuth {
     if expiresAt.isBefore(now.minusSeconds(clockSkew)) then
       throw IllegalArgumentException("JWT is expired")
 
-    val notBefore = Option(claims.getNotBeforeTime)
-      .map(_.toInstant)
-      .getOrElse(throw IllegalArgumentException("JWT is missing nbf"))
-    if notBefore.isAfter(now.plusSeconds(clockSkew)) then
-      throw IllegalArgumentException("JWT is not yet valid")
+    Option(claims.getNotBeforeTime).map(_.toInstant).foreach { notBefore =>
+      if notBefore.isAfter(now.plusSeconds(clockSkew)) then
+        throw IllegalArgumentException("JWT is not yet valid")
+    }
   }
 
   private def loadJwkSet(config: KeycloakConfig): JWKSet = {

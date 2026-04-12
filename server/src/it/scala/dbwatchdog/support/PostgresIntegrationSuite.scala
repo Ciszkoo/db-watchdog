@@ -70,6 +70,7 @@ object IntegrationDb {
           issuer = "https://issuer.example.test/realms/db-watchdog",
           jwksUrl = "https://issuer.example.test/jwks",
           audience = "db-watchdog-backend",
+          authorizedParty = "db-watchdog-frontend",
           clockSkewSeconds = 30
         )
       )

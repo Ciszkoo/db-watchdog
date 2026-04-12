@@ -25,6 +25,7 @@ object AppConfigSuite extends SimpleIOSuite {
         |  issuer = "https://issuer.example.test/realms/db-watchdog"
         |  jwks-url = "https://issuer.example.test/jwks"
         |  audience = "db-watchdog-backend"
+        |  authorized-party = "db-watchdog-frontend"
         |  clock-skew-seconds = 30
         |}
         |""".stripMargin)
@@ -34,7 +35,10 @@ object AppConfigSuite extends SimpleIOSuite {
       expect(loaded.exists(_.server.host == "127.0.0.1")) and
         expect(loaded.exists(_.server.port == 8081)) and
         expect(loaded.exists(_.db.schema == "public")) and
-        expect(loaded.exists(_.keycloak.audience == "db-watchdog-backend"))
+        expect(loaded.exists(_.keycloak.audience == "db-watchdog-backend")) and
+        expect(
+          loaded.exists(_.keycloak.authorizedParty == "db-watchdog-frontend")
+        )
     )
   }
 
@@ -56,6 +60,7 @@ object AppConfigSuite extends SimpleIOSuite {
         |  issuer = "https://issuer.example.test/realms/db-watchdog"
         |  jwks-url = "https://issuer.example.test/jwks"
         |  audience = "db-watchdog-backend"
+        |  authorized-party = "db-watchdog-frontend"
         |}
         |""".stripMargin)
       .load[AppConfig]

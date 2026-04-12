@@ -23,6 +23,7 @@ object AuthTestSupport {
   val keyId = "test-key"
   val issuer = "https://issuer.example.test/realms/db-watchdog"
   val audience = "db-watchdog-backend"
+  val authorizedParty = "db-watchdog-frontend"
   lazy val rsaJwk = new RSAKeyGenerator(2048).keyID(keyId).generate()
 
   val authUser: AuthUser = AuthUser(
@@ -86,10 +87,12 @@ object AuthTestSupport {
   def validJwtPayload(
       now: Instant = Instant.now(),
       issuerOverride: String = issuer,
-      audienceOverride: String = audience
+      audienceOverride: String = audience,
+      authorizedPartyOverride: String = authorizedParty
   ): Json = Json.obj(
     "iss" -> Json.fromString(issuerOverride),
     "aud" -> Json.arr(Json.fromString(audienceOverride)),
+    "azp" -> Json.fromString(authorizedPartyOverride),
     "sub" -> Json.fromString(authUser.sub),
     "email" -> Json.fromString(authUser.email),
     "given_name" -> Json.fromString(authUser.firstName),
@@ -108,6 +111,7 @@ object AuthTestSupport {
       issuer = issuer,
       jwksUrl = jwksUrl,
       audience = audience,
+      authorizedParty = authorizedParty,
       clockSkewSeconds = 30
     )
 }

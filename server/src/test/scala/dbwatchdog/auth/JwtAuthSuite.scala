@@ -158,11 +158,34 @@ object JwtAuthSuite extends IOSuite {
     for {
       result <- JwtAuth.decodeToken(
         AuthTestSupport.signedJwt(
-          AuthTestSupport.validJwtPayload(audienceOverride = "other-audience")
+          AuthTestSupport.validJwtPayload(
+            audienceOverride = "other-audience",
+            authorizedPartyOverride = "other-client"
+          )
         ),
         config
       )
     } yield expect(result.isEmpty)
+  }
+
+  test("accepts tokens with matching azp when audience is missing") { config =>
+    val payload = AuthTestSupport
+      .validJwtPayload()
+      .mapObject(_.remove("aud"))
+
+    for {
+      result <- JwtAuth.decodeToken(AuthTestSupport.signedJwt(payload), config)
+    } yield expect(result.nonEmpty)
+  }
+
+  test("accepts tokens when nbf is missing") { config =>
+    val payload = AuthTestSupport
+      .validJwtPayload()
+      .mapObject(_.remove("nbf"))
+
+    for {
+      result <- JwtAuth.decodeToken(AuthTestSupport.signedJwt(payload), config)
+    } yield expect(result.nonEmpty)
   }
 
   test("rejects tokens missing the team claim") { config =>

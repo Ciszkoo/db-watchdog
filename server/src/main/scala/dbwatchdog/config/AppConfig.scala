@@ -35,6 +35,7 @@ object AppConfig {
       issuer: String,
       jwksUrl: String,
       audience: String,
+      authorizedParty: String,
       clockSkewSeconds: Long = 30
   )
 }
