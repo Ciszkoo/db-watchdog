@@ -71,7 +71,7 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(loaded.server.port == 8080) and
         expect(loaded.server.hostIp4s.toString == "localhost") and
         expect(loaded.server.portIp4s.value == 8080) and
-        expect(loaded.db.url == "jdbc:postgresql://localhost:5432/db_watchdog")
+        expect(loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog")
     )
   }
 }
