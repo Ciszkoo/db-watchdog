@@ -36,6 +36,18 @@ sbt run
 
 By default it listens on `http://localhost:8080`.
 
+Backend tests are split into unit and integration suites:
+
+```bash
+cd server
+sbt test
+sbt "IntegrationTest / test"
+sbt coverage test "IntegrationTest / test" coverageReport
+```
+
+Integration tests use Testcontainers, so local Docker access is required.
+Coverage reports can be generated locally and in CI, but there is no fixed `100%` coverage gate.
+
 ### Frontend
 
 The frontend uses `pnpm`.
@@ -71,6 +83,8 @@ cd server
 sbt scalafix
 sbt scalafmt
 sbt test
+sbt "IntegrationTest / test"
+sbt coverage test "IntegrationTest / test" coverageReport
 sbt compile
 ```
 

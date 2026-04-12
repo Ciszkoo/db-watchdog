@@ -8,9 +8,10 @@ import dbwatchdog.repository.Repositories
 import dbwatchdog.service.Services
 
 object Main extends IOApp {
-  given appConfig: AppConfig = AppConfig.load
-
-  def run(args: List[String]): IO[ExitCode] = runWithConfig
+  def run(args: List[String]): IO[ExitCode] = {
+    given AppConfig = AppConfig.load
+    runWithConfig
+  }
 
   def runWithConfig(using config: AppConfig): IO[ExitCode] = {
     val app = for {
@@ -28,6 +29,5 @@ object Main extends IOApp {
         ) >> IO.never.as(ExitCode.Success)
       }
     } yield exitCode
-
   }
 }

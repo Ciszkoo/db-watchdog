@@ -6,7 +6,7 @@ import org.http4s.circe.*
 import org.http4s.circe.CirceEntityDecoder.*
 import org.http4s.dsl.io.*
 import org.http4s.server.AuthMiddleware
-import org.http4s.{AuthedRoutes, HttpRoutes}
+import org.http4s.{AuthedRoutes, HttpRoutes, MessageFailure}
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.SyncUserRequest
@@ -26,9 +26,12 @@ object UserRoutes {
           response <- Ok(user.asJson)
         } yield response
 
-        res.handleErrorWith { error =>
-          IO.println(s"Error: $error") >>
-            InternalServerError(s"Error: ${error.getMessage}")
+        res.handleErrorWith {
+          case error: MessageFailure =>
+            BadRequest(error.message)
+          case error =>
+            IO.println(s"Error: $error") >>
+              InternalServerError(s"Error: ${error.getMessage}")
         }
       }
     }
