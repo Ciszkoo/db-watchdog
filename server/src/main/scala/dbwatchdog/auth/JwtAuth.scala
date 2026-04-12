@@ -3,6 +3,7 @@ package dbwatchdog.auth
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.time.Instant
+import scala.jdk.CollectionConverters.*
 
 import cats.data.{Kleisli, OptionT}
 import cats.effect.IO
@@ -15,8 +16,6 @@ import io.circe.{Decoder, HCursor}
 import org.http4s.headers.Authorization
 import org.http4s.server.AuthMiddleware
 import org.http4s.{AuthScheme, Credentials, Request, Response, Status}
-
-import scala.jdk.CollectionConverters.*
 
 import dbwatchdog.config.AppConfig.KeycloakConfig
 
