@@ -74,7 +74,8 @@ object AuthTestSupport {
       payload: Json,
       kid: String = keyId
   ): String = {
-    val header = JWSHeader.Builder(JWSAlgorithm.RS256)
+    val header = JWSHeader
+      .Builder(JWSAlgorithm.RS256)
       .keyID(kid)
       .build()
     val jwsObject = JWSObject(header, Payload(payload.noSpaces))

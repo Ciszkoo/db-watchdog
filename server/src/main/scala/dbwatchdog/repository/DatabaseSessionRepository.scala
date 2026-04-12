@@ -39,7 +39,9 @@ trait DatabaseSessionRepository extends TableFragment[UUID, DatabaseSession] {
 object DatabaseSessionRepository {
 
   def make: DatabaseSessionRepository = new DatabaseSessionRepository {
-    def create(input: CreateDatabaseSessionInput): ConnectionIO[DatabaseSession] =
+    def create(
+        input: CreateDatabaseSessionInput
+    ): ConnectionIO[DatabaseSession] =
       (fr"""
         INSERT INTO database_sessions (user_id, database_id, credential_id, client_addr, started_at)
         VALUES (${input.userId}, ${input.databaseId}, ${input.credentialId}, ${input.clientAddr}, ${input.startedAt})

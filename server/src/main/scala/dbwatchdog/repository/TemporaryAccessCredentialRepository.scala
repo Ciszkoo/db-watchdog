@@ -8,7 +8,10 @@ import doobie.implicits.*
 import doobie.postgres.implicits.*
 
 import dbwatchdog.database.TableFragment
-import dbwatchdog.domain.{CreateTemporaryAccessCredentialInput, TemporaryAccessCredential}
+import dbwatchdog.domain.{
+  CreateTemporaryAccessCredentialInput,
+  TemporaryAccessCredential
+}
 
 trait TemporaryAccessCredentialRepository
     extends TableFragment[UUID, TemporaryAccessCredential] {

@@ -27,39 +27,45 @@ object JwtAuthSuite extends IOSuite {
   type Res = AppConfig.KeycloakConfig
 
   override def sharedResource: Resource[IO, AppConfig.KeycloakConfig] =
-    Resource.make {
-      IO.blocking {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext(
-          "/jwks",
-          exchange => {
-            val body = s"""{"keys":[${AuthTestSupport.rsaJwk.toPublicJWK.toJSONString}]}"""
-            val bytes = body.getBytes()
-            exchange.getResponseHeaders.add("Content-Type", "application/json")
-            exchange.sendResponseHeaders(200, bytes.length)
-            val output = exchange.getResponseBody
-            output.write(bytes)
-            output.close()
-            exchange.close()
-          }
-        )
-        server.start()
-        server
+    Resource
+      .make {
+        IO.blocking {
+          val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+          server.createContext(
+            "/jwks",
+            exchange => {
+              val body =
+                s"""{"keys":[${AuthTestSupport.rsaJwk.toPublicJWK.toJSONString}]}"""
+              val bytes = body.getBytes()
+              exchange.getResponseHeaders
+                .add("Content-Type", "application/json")
+              exchange.sendResponseHeaders(200, bytes.length)
+              val output = exchange.getResponseBody
+              output.write(bytes)
+              output.close()
+              exchange.close()
+            }
+          )
+          server.start()
+          server
+        }
+      } { server =>
+        IO.blocking(server.stop(0))
       }
-    } { server =>
-      IO.blocking(server.stop(0))
-    }.map { server =>
-      AuthTestSupport.keycloakConfig(
-        s"http://127.0.0.1:${server.getAddress.getPort}/jwks"
-      )
-    }
+      .map { server =>
+        AuthTestSupport.keycloakConfig(
+          s"http://127.0.0.1:${server.getAddress.getPort}/jwks"
+        )
+      }
 
   private def securedApp(using
       middleware: AuthMiddleware[IO, AuthUser]
   ) =
     middleware(
       AuthedRoutes.of[AuthUser, IO] { case GET -> Root / "secured" as user =>
-        Ok(s"${user.username}:${user.roles.toList.sorted.mkString(",")}:${user.isDba}")
+        Ok(
+          s"${user.username}:${user.roles.toList.sorted.mkString(",")}:${user.isDba}"
+        )
       }
     ).orNotFound
 
@@ -113,7 +119,8 @@ object JwtAuthSuite extends IOSuite {
   }
 
   test("rejects tokens signed with the wrong key") { config =>
-    val wrongKey = new RSAKeyGenerator(2048).keyID(AuthTestSupport.keyId).generate()
+    val wrongKey =
+      new RSAKeyGenerator(2048).keyID(AuthTestSupport.keyId).generate()
     val badToken = {
       val payload = AuthTestSupport.validJwtPayload()
       val header = new com.nimbusds.jose.JWSHeader.Builder(
@@ -123,7 +130,9 @@ object JwtAuthSuite extends IOSuite {
         header,
         new com.nimbusds.jose.Payload(payload.noSpaces)
       )
-      jwsObject.sign(new com.nimbusds.jose.crypto.RSASSASigner(wrongKey.toPrivateKey))
+      jwsObject.sign(
+        new com.nimbusds.jose.crypto.RSASSASigner(wrongKey.toPrivateKey)
+      )
       jwsObject.serialize()
     }
 

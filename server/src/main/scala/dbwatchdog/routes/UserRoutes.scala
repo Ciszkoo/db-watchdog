@@ -23,9 +23,8 @@ object UserRoutes {
           response <- Ok(user.asJson)
         } yield response
 
-        res.handleErrorWith {
-          case error =>
-            InternalServerError(s"Error: ${error.getMessage}")
+        res.handleErrorWith { case error =>
+          InternalServerError(s"Error: ${error.getMessage}")
         }
       }
     }

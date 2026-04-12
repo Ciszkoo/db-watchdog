@@ -20,7 +20,9 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
       userDatabaseAccessExtensions <- db.tableExists(
         "user_database_access_extensions"
       )
-      temporaryAccessCredentials <- db.tableExists("temporary_access_credentials")
+      temporaryAccessCredentials <- db.tableExists(
+        "temporary_access_credentials"
+      )
       databaseSessions <- db.tableExists("database_sessions")
     } yield expect(users) and
       expect(teams) and

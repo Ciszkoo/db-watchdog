@@ -44,7 +44,11 @@ object UserRoutesSuite extends SimpleIOSuite {
   test("legacy sync endpoint path is not exposed anymore") {
     for {
       response <- UserRoutes
-        .routes(recordingService(Ref.unsafe[IO, Vector[AuthenticatedUserSyncInput]](Vector.empty)))
+        .routes(
+          recordingService(
+            Ref.unsafe[IO, Vector[AuthenticatedUserSyncInput]](Vector.empty)
+          )
+        )
         .orNotFound
         .run(
           Request[IO](Method.POST, uri"/users/sync")

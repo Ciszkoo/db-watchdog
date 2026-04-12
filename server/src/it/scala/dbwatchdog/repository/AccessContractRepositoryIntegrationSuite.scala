@@ -13,7 +13,8 @@ import dbwatchdog.domain.{
 }
 import dbwatchdog.support.PostgresIntegrationSuite
 
-object AccessContractRepositoryIntegrationSuite extends PostgresIntegrationSuite {
+object AccessContractRepositoryIntegrationSuite
+    extends PostgresIntegrationSuite {
   private val teamRepo = TeamRepository.make
   private val userRepo = UserRepository.make
   private val databaseRepo = DatabaseRepository.make
@@ -152,5 +153,9 @@ object AccessContractRepositoryIntegrationSuite extends PostgresIntegrationSuite
       )
     } yield SeededIds(team.id, user.id, database.id)
 
-  private final case class SeededIds(teamId: UUID, userId: UUID, databaseId: UUID)
+  private final case class SeededIds(
+      teamId: UUID,
+      userId: UUID,
+      databaseId: UUID
+  )
 }

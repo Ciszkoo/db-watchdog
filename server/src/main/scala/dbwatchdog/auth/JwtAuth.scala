@@ -109,7 +109,10 @@ object JwtAuth {
       throw IllegalArgumentException("Token header is missing kid")
   }
 
-  private def validateSignature(jwt: SignedJWT, config: KeycloakConfig): Unit = {
+  private def validateSignature(
+      jwt: SignedJWT,
+      config: KeycloakConfig
+  ): Unit = {
     val jwkSet = loadJwkSet(config)
     val kid = jwt.getHeader.getKeyID
     val jwk = Option(jwkSet.getKeyByKeyId(kid))
@@ -138,7 +141,8 @@ object JwtAuth {
     if claims.getIssuer != config.issuer then
       throw IllegalArgumentException("JWT issuer mismatch")
 
-    val audience = Option(claims.getAudience).map(_.asScala.toSet).getOrElse(Set.empty)
+    val audience =
+      Option(claims.getAudience).map(_.asScala.toSet).getOrElse(Set.empty)
     if !audience.contains(config.audience) then
       throw IllegalArgumentException("JWT audience mismatch")
 
@@ -156,8 +160,10 @@ object JwtAuth {
   }
 
   private def loadJwkSet(config: KeycloakConfig): JWKSet = {
-    val request = HttpRequest.newBuilder(URI.create(config.jwksUrl)).GET().build()
-    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+    val request =
+      HttpRequest.newBuilder(URI.create(config.jwksUrl)).GET().build()
+    val response =
+      httpClient.send(request, HttpResponse.BodyHandlers.ofString())
 
     if response.statusCode() != 200 then
       throw IllegalArgumentException("Unable to fetch JWKS")

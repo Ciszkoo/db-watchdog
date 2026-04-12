@@ -20,7 +20,9 @@ trait TeamDatabaseGrantRepository
     "updated_at"
   )
 
-  def upsert(input: UpsertTeamDatabaseGrantInput): ConnectionIO[TeamDatabaseGrant]
+  def upsert(
+      input: UpsertTeamDatabaseGrantInput
+  ): ConnectionIO[TeamDatabaseGrant]
 }
 
 object TeamDatabaseGrantRepository {
