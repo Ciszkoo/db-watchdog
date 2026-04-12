@@ -17,9 +17,9 @@ trait DatabaseRepository extends TableFragment[UUID, Database] {
     "engine",
     "host",
     "port",
-    "\"user\"",
-    "password",
-    "\"schema\"",
+    "technical_user",
+    "technical_password",
+    "database_name",
     "created_at",
     "updated_at"
   )
@@ -32,8 +32,8 @@ object DatabaseRepository {
   def make: DatabaseRepository = new DatabaseRepository {
 
     def insert(input: CreateDatabase): ConnectionIO[Database] =
-      (fr"INSERT INTO" ++ tableF ++ fr"""(engine, host, port, "user", password, "schema")""" ++
-        fr"VALUES (${input.engine}, ${input.host}, ${input.port}, ${input.user}, ${input.password}, ${input.schema})" ++
+      (fr"INSERT INTO" ++ tableF ++ fr"(engine, host, port, technical_user, technical_password, database_name)" ++
+        fr"VALUES (${input.engine}, ${input.host}, ${input.port}, ${input.technicalUser}, ${input.technicalPassword}, ${input.databaseName})" ++
         returningF)
         .query[Database]
         .unique

@@ -36,6 +36,10 @@ sbt run
 
 By default it listens on `http://localhost:8080`.
 
+The backend now validates Keycloak access tokens against the configured JWKS endpoint.
+Caller identity, the required `team` claim, and the `DBA` role all come from validated token claims.
+The user synchronization endpoint is `POST /api/v1/users/me/sync` and derives identity from the bearer token instead of a client payload.
+
 Backend tests are split into unit and integration suites:
 
 ```bash
@@ -62,6 +66,8 @@ Default frontend-related config:
 
 - Keycloak URL: `http://localhost:8180`
 - API base URL: `http://localhost:8080/api/v1`
+
+During startup the UI authenticates through Keycloak and then calls `POST /users/me/sync` without sending identity fields in the request body.
 
 ### Reverse Proxy
 
@@ -111,8 +117,32 @@ go build ./...
 - Backend Scala sources live in `server/src/main/scala/dbwatchdog/`.
 - Frontend app code lives in `ui/app/`.
 - Reverse proxy protocol logic lives in `reverse-proxy/protocol/postgres/`.
+- Local Keycloak development data lives in `docker/keycloak/realm-export.json`.
+
+## Shared Database Contract
+
+The backend now persists the shared contract that later proxy work will read and write directly:
+
+- `databases` with `technical_user`, `technical_password`, and `database_name`
+- `team_database_grants`
+- `user_database_access_extensions`
+- `temporary_access_credentials`
+- `database_sessions`
+
+At this stage the tables and repositories exist, but OTP issuance and proxy-side verification are still implemented in later PRs.
+
+## Local Keycloak Contract
+
+The local realm treats Keycloak as the source of truth for:
+
+- the required `team` claim
+- the `DBA` administrative realm role
+- the JWT signature and audience contract used by the backend
+
+The frontend development client includes a backend audience mapper so the backend can validate `aud = db-watchdog-backend`.
 
 ## Current State
 
-- The reverse proxy contains TODOs around validating tokens against the system database and saving session information.
+- The backend has a validated auth boundary, token-derived user sync, and the baseline shared persistence contract for grants, OTPs, and sessions.
+- The reverse proxy still contains TODOs around direct OTP verification against the system database and saving session information.
 - The repository includes local certificates under `certs/` for development use.

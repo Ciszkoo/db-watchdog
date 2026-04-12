@@ -16,5 +16,17 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
       users <- db.tableExists("users")
       teams <- db.tableExists("teams")
       databases <- db.tableExists("databases")
-    } yield expect(users) and expect(teams) and expect(databases)
+      teamDatabaseGrants <- db.tableExists("team_database_grants")
+      userDatabaseAccessExtensions <- db.tableExists(
+        "user_database_access_extensions"
+      )
+      temporaryAccessCredentials <- db.tableExists("temporary_access_credentials")
+      databaseSessions <- db.tableExists("database_sessions")
+    } yield expect(users) and
+      expect(teams) and
+      expect(databases) and
+      expect(teamDatabaseGrants) and
+      expect(userDatabaseAccessExtensions) and
+      expect(temporaryAccessCredentials) and
+      expect(databaseSessions)
 }

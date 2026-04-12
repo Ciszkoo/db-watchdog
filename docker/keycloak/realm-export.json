@@ -29,7 +29,7 @@
         "clientRole": false
       },
       {
-        "name": "admin",
+        "name": "DBA",
         "description": "Administrator role",
         "composite": false,
         "clientRole": false
@@ -181,6 +181,19 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*"
       },
+      "protocolMappers": [
+        {
+          "name": "backend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "db-watchdog-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
       "defaultClientScopes": [
         "web-origins",
         "acr",
@@ -242,7 +255,7 @@
       ],
       "realmRoles": [
         "user",
-        "admin"
+        "DBA"
       ]
     },
     {
@@ -281,7 +294,7 @@
         "subComponents": {},
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{}}},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255}}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255}}},{\"name\":\"team\",\"displayName\":\"Team\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}}]}"
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{}}},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255}}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255}}},{\"name\":\"team\",\"displayName\":\"Team\",\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"min\":1,\"max\":255}},\"permissions\":{\"view\":[\"DBA\",\"user\"],\"edit\":[\"DBA\"]}}]}"
           ]
         }
       }

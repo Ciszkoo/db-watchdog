@@ -31,5 +31,10 @@ object AppConfig {
     def url = s"jdbc:postgresql://$host:$port/$schema"
   }
 
-  case class KeycloakConfig()
+  case class KeycloakConfig(
+      issuer: String,
+      jwksUrl: String,
+      audience: String,
+      clockSkewSeconds: Long = 30
+  )
 }

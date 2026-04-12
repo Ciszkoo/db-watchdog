@@ -15,9 +15,9 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
         engine = "postgres",
         host = s"db-$suffix.local",
         port = 5432,
-        user = s"db_user_$suffix",
-        password = "secret",
-        schema = "public"
+        technicalUser = s"db_user_$suffix",
+        technicalPassword = "secret",
+        databaseName = "public"
       )
 
       for {
@@ -25,8 +25,8 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
       } yield expect(persisted.engine == input.engine) and
         expect(persisted.host == input.host) and
         expect(persisted.port == input.port) and
-        expect(persisted.user == input.user) and
-        expect(persisted.schema == input.schema)
+        expect(persisted.technicalUser == input.technicalUser) and
+        expect(persisted.databaseName == input.databaseName)
     }
   }
 }

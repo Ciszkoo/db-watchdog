@@ -1,17 +1,18 @@
 package dbwatchdog
 
-import dbwatchdog.domain.{SyncUserRequest, UpsertUserInput}
+import dbwatchdog.auth.AuthUser
+import dbwatchdog.domain.AuthenticatedUserSyncInput
 
 package object routes {
 
-  extension (r: SyncUserRequest) {
+  extension (user: AuthUser) {
 
-    def toUpsertInput: UpsertUserInput = UpsertUserInput(
-      keycloakId = r.keycloakId,
-      email = r.email,
-      firstName = r.firstName,
-      lastName = r.lastName,
-      teamName = r.team
+    def toSyncInput: AuthenticatedUserSyncInput = AuthenticatedUserSyncInput(
+      keycloakId = user.sub,
+      email = user.email,
+      firstName = user.firstName,
+      lastName = user.lastName,
+      team = user.team
     )
   }
 }

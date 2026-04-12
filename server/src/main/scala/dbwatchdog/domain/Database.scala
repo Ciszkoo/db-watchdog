@@ -3,6 +3,8 @@ package dbwatchdog.domain
 import java.time.Instant
 import java.util.UUID
 
+import io.circe.derivation.ConfiguredCodec
+
 import dbwatchdog.database.Persisted
 
 // Database model
@@ -11,19 +13,19 @@ final case class Database(
     engine: String,
     host: String,
     port: Int,
-    user: String,
-    password: String, // Temporary solution to store password in the db
-    schema: String,
-    created_at: Instant,
-    updated_at: Instant
-) extends Persisted[UUID]
+    technicalUser: String,
+    technicalPassword: String, // Temporary solution until credential hardening is implemented end to end.
+    databaseName: String,
+    createdAt: Instant,
+    updatedAt: Instant
+) extends Persisted[UUID] derives ConfiguredCodec
 
 // Repository inputs
 final case class CreateDatabase(
     engine: String,
     host: String,
     port: Int,
-    user: String,
-    password: String,
-    schema: String
+    technicalUser: String,
+    technicalPassword: String,
+    databaseName: String
 )

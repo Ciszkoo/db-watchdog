@@ -6,11 +6,11 @@ object Dependencies {
     val catsEffect = "3.5.2"
     val http4s = "0.23.24"
     val circe = "0.14.6"
+    val nimbusJoseJwt = "10.6"
     val flyway = "11.13.0"
     val flyway4s = "1.1.0"
     val postgresql = "42.7.8"
     val doobie = "1.0.0-RC10"
-    val jwt = "9.4.5"
     val weaver = "0.11.0"
     val testcontainers = "2.0.4"
   }
@@ -44,7 +44,7 @@ object Dependencies {
     "org.tpolecat" %% "doobie-hikari" % Versions.doobie,
 
     // JWT for Keycloak token validation
-    "com.github.jwt-scala" %% "jwt-circe" % Versions.jwt
+    "com.nimbusds" % "nimbus-jose-jwt" % Versions.nimbusJoseJwt
   )
 
   val testDependencies = Seq(

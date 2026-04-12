@@ -22,15 +22,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<UserInfo | null>(null)
 
-  const syncUserWithBackend = useCallback(async (userInfo: UserInfo) => {
+  const syncUserWithBackend = useCallback(async () => {
     try {
-      await userApi.syncUser({
-        keycloakId: userInfo.sub,
-        email: userInfo.email,
-        firstName: userInfo.firstName,
-        lastName: userInfo.lastName,
-        team: userInfo.team,
-      })
+      await userApi.syncUser()
     } catch (error) {
       console.error("Failed to sync user with backend:", error)
     }
@@ -49,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthInterceptor(getToken, () => updateToken(30))
         setIsAuthenticated(true)
         setUser(userInfo)
-        await syncUserWithBackend(userInfo)
+        await syncUserWithBackend()
       } catch (error) {
         if (error instanceof MissingTeamError) {
           console.error("User has no team assigned")
