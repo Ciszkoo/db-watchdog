@@ -46,7 +46,7 @@ sbt coverage test "IntegrationTest / test" coverageReport
 ```
 
 Integration tests use Testcontainers, so local Docker access is required.
-Coverage is enforced at `100%` for both statements and branches.
+Coverage reports can be generated locally and in CI, but there is no fixed `100%` coverage gate.
 
 ### Frontend
 

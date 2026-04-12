@@ -8,15 +8,10 @@ import dbwatchdog.repository.Repositories
 import dbwatchdog.service.Services
 
 object Main extends IOApp {
-  def loadConfig: IO[AppConfig] = IO.delay(AppConfig.load)
-
-  def run(args: List[String]): IO[ExitCode] =
-    loadConfig.flatMap(runLoadedConfig)
-
-  private[dbwatchdog] def runLoadedConfig(
-      config: AppConfig
-  ): IO[ExitCode] =
-    runWithConfig(using config)
+  def run(args: List[String]): IO[ExitCode] = {
+    given AppConfig = AppConfig.load
+    runWithConfig
+  }
 
   def runWithConfig(using config: AppConfig): IO[ExitCode] = {
     val app = for {

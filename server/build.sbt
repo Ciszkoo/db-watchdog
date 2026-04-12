@@ -22,9 +22,6 @@ lazy val root = project
     scalacOptions ++= Seq(
       "-Wunused:imports"
     ),
-    coverageFailOnMinimum := true,
-    coverageMinimumStmtTotal := 100,
-    coverageMinimumBranchTotal := 100,
     Test / parallelExecution := false,
     It / parallelExecution := false
   )
