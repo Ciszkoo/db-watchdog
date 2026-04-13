@@ -35,6 +35,12 @@ trait TemporaryAccessCredentialRepository
       id: UUID,
       usedAt: Instant
   ): ConnectionIO[TemporaryAccessCredential]
+
+  def invalidateActiveForUserAndDatabase(
+      userId: UUID,
+      databaseId: UUID,
+      now: Instant
+  ): ConnectionIO[Int]
 }
 
 object TemporaryAccessCredentialRepository {
@@ -63,5 +69,20 @@ object TemporaryAccessCredentialRepository {
         """ ++ returningF)
           .query[TemporaryAccessCredential]
           .unique
+
+      def invalidateActiveForUserAndDatabase(
+          userId: UUID,
+          databaseId: UUID,
+          now: Instant
+      ): ConnectionIO[Int] =
+        sql"""
+          UPDATE temporary_access_credentials SET
+            used_at = $now,
+            updated_at = NOW()
+          WHERE user_id = $userId
+            AND database_id = $databaseId
+            AND used_at IS NULL
+            AND expires_at > $now
+        """.update.run
     }
 }

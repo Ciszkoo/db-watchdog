@@ -23,6 +23,15 @@ trait TeamDatabaseGrantRepository
   def upsert(
       input: UpsertTeamDatabaseGrantInput
   ): ConnectionIO[TeamDatabaseGrant]
+
+  def delete(
+      teamId: UUID,
+      databaseId: UUID
+  ): ConnectionIO[Int]
+
+  def findDatabaseIdsByTeamId(
+      teamId: UUID
+  ): ConnectionIO[List[UUID]]
 }
 
 object TeamDatabaseGrantRepository {
@@ -39,5 +48,24 @@ object TeamDatabaseGrantRepository {
       """ ++ returningF)
         .query[TeamDatabaseGrant]
         .unique
+
+    def delete(
+        teamId: UUID,
+        databaseId: UUID
+    ): ConnectionIO[Int] =
+      sql"""
+        DELETE FROM team_database_grants
+        WHERE team_id = $teamId AND database_id = $databaseId
+      """.update.run
+
+    def findDatabaseIdsByTeamId(
+        teamId: UUID
+    ): ConnectionIO[List[UUID]] =
+      sql"""
+        SELECT database_id
+        FROM team_database_grants
+        WHERE team_id = $teamId
+        ORDER BY database_id
+      """.query[UUID].to[List]
   }
 }

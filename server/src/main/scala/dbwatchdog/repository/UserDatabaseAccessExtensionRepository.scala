@@ -1,5 +1,6 @@
 package dbwatchdog.repository
 
+import java.time.Instant
 import java.util.UUID
 
 import doobie.*
@@ -27,6 +28,16 @@ trait UserDatabaseAccessExtensionRepository
   def upsert(
       input: UpsertUserDatabaseAccessExtensionInput
   ): ConnectionIO[UserDatabaseAccessExtension]
+
+  def delete(
+      userId: UUID,
+      databaseId: UUID
+  ): ConnectionIO[Int]
+
+  def findActiveByUserId(
+      userId: UUID,
+      now: Instant
+  ): ConnectionIO[List[UserDatabaseAccessExtension]]
 }
 
 object UserDatabaseAccessExtensionRepository {
@@ -45,5 +56,32 @@ object UserDatabaseAccessExtensionRepository {
         """ ++ returningF)
           .query[UserDatabaseAccessExtension]
           .unique
+
+      def delete(
+          userId: UUID,
+          databaseId: UUID
+      ): ConnectionIO[Int] =
+        sql"""
+          DELETE FROM user_database_access_extensions
+          WHERE user_id = $userId AND database_id = $databaseId
+        """.update.run
+
+      def findActiveByUserId(
+          userId: UUID,
+          now: Instant
+      ): ConnectionIO[List[UserDatabaseAccessExtension]] =
+        sql"""
+          SELECT
+            user_database_access_extensions.id,
+            user_database_access_extensions.user_id,
+            user_database_access_extensions.database_id,
+            user_database_access_extensions.expires_at,
+            user_database_access_extensions.created_at,
+            user_database_access_extensions.updated_at
+          FROM user_database_access_extensions
+          WHERE user_id = $userId
+            AND (expires_at IS NULL OR expires_at > $now)
+          ORDER BY database_id
+        """.query[UserDatabaseAccessExtension].to[List]
     }
 }

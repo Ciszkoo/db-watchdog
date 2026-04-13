@@ -19,6 +19,7 @@ import org.http4s.server.AuthMiddleware
 import org.http4s.{AuthScheme, Credentials, Request, Response, Status}
 
 import dbwatchdog.config.AppConfig.KeycloakConfig
+import dbwatchdog.domain.AuthenticatedUserSyncInput
 
 final case class AuthUser(
     sub: String, // Keycloak user ID
@@ -30,6 +31,14 @@ final case class AuthUser(
     roles: Set[String]
 ) {
   def isDba: Boolean = roles.contains("DBA")
+
+  def toSyncInput: AuthenticatedUserSyncInput = AuthenticatedUserSyncInput(
+    keycloakId = sub,
+    email = email,
+    firstName = firstName,
+    lastName = lastName,
+    team = team
+  )
 }
 
 object AuthUser {

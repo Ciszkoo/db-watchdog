@@ -72,6 +72,10 @@ object IntegrationDb {
           audience = "db-watchdog-backend",
           authorizedParty = "db-watchdog-frontend",
           clockSkewSeconds = 30
+        ),
+        otp = AppConfig.OtpConfig(
+          ttlSeconds = 300,
+          randomBytes = 18
         )
       )
       _ <- Resource.eval {

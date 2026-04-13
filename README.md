@@ -39,6 +39,22 @@ By default it listens on `http://localhost:8080`.
 The backend now validates Keycloak access tokens against the configured JWKS endpoint.
 Caller identity, the required `team` claim, and the `DBA` role all come from validated token claims.
 The user synchronization endpoint is `POST /api/v1/users/me/sync` and derives identity from the bearer token instead of a client payload.
+The backend now also exposes:
+
+- `GET /api/v1/admin/teams`
+- `GET /api/v1/admin/users`
+- `GET /api/v1/admin/databases`
+- `POST /api/v1/admin/databases`
+- `PUT /api/v1/admin/team-database-grants`
+- `DELETE /api/v1/admin/team-database-grants/{teamId}/{databaseId}`
+- `PUT /api/v1/admin/user-database-access-extensions`
+- `DELETE /api/v1/admin/user-database-access-extensions/{userId}/{databaseId}`
+- `GET /api/v1/admin/users/{userId}/effective-access`
+- `GET /api/v1/me/effective-access`
+- `POST /api/v1/me/databases/{databaseId}/otp`
+
+Database responses never expose `technicalPassword`.
+The backend now issues short-lived OTPs backed by stored SHA-256 hashes, but proxy-side OTP verification is still pending.
 
 Backend tests are split into unit and integration suites:
 
@@ -129,7 +145,7 @@ The backend now persists the shared contract that later proxy work will read and
 - `temporary_access_credentials`
 - `database_sessions`
 
-At this stage the tables and repositories exist, but OTP issuance and proxy-side verification are still implemented in later PRs.
+At this stage the backend now creates and invalidates OTP credentials in these tables, but proxy-side verification and session review APIs are still implemented in later PRs.
 
 ## Local Keycloak Contract
 
@@ -143,6 +159,7 @@ The frontend development client includes a backend audience mapper so the backen
 
 ## Current State
 
-- The backend has a validated auth boundary, token-derived user sync, and the baseline shared persistence contract for grants, OTPs, and sessions.
+- The backend has a validated auth boundary, token-derived user sync, administrative access APIs, effective-access resolution, and OTP issuance.
 - The reverse proxy still contains TODOs around direct OTP verification against the system database and saving session information.
+- Session review endpoints and database edit/delete flows are still pending on the backend side.
 - The repository includes local certificates under `certs/` for development use.

@@ -40,6 +40,10 @@ object UserServiceSuite extends SimpleIOSuite {
         AuthTestSupport.persistedUser.updatedAt
       ).pure[ConnectionIO]
 
+      def list = List.empty[Team].pure[ConnectionIO]
+
+      def findById(id: UUID) = Option.empty[Team].pure[ConnectionIO]
+
       def findByName(name: String) = Option.empty[Team].pure[ConnectionIO]
 
       def findOrCreate(name: String) = {
@@ -77,6 +81,11 @@ object UserServiceSuite extends SimpleIOSuite {
         AuthTestSupport.persistedUser.copy(teamId = teamId).pure[ConnectionIO]
       }
 
+      def list = List.empty[dbwatchdog.domain.User].pure[ConnectionIO]
+
+      def findById(id: UUID) =
+        Option(AuthTestSupport.persistedUser).pure[ConnectionIO]
+
       def findByKeycloakId(keycloakId: String) =
         AuthTestSupport.persistedUser.pure[ConnectionIO]
     }
@@ -110,6 +119,10 @@ object UserServiceSuite extends SimpleIOSuite {
       def create(name: String) =
         failConnection("create should not be called")
 
+      def list = failConnection("list should not be called")
+
+      def findById(id: UUID) = failConnection("findById should not be called")
+
       def findByName(name: String) =
         failConnection("findByName should not be called")
 
@@ -138,6 +151,10 @@ object UserServiceSuite extends SimpleIOSuite {
 
       def upsert(input: UpsertUserInput, teamId: UUID) =
         failConnection("upsert should not be called")
+
+      def list = failConnection("list should not be called")
+
+      def findById(id: UUID) = failConnection("findById should not be called")
 
       def findByKeycloakId(keycloakId: String) = {
         requestedKeycloakId = Some(keycloakId)

@@ -28,6 +28,10 @@ object AppConfigSuite extends SimpleIOSuite {
         |  authorized-party = "db-watchdog-frontend"
         |  clock-skew-seconds = 30
         |}
+        |otp {
+        |  ttl-seconds = 300
+        |  random-bytes = 18
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
@@ -36,6 +40,7 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(loaded.exists(_.server.port == 8081)) and
         expect(loaded.exists(_.db.schema == "public")) and
         expect(loaded.exists(_.keycloak.audience == "db-watchdog-backend")) and
+        expect(loaded.exists(_.otp.ttlSeconds == 300L)) and
         expect(
           loaded.exists(_.keycloak.authorizedParty == "db-watchdog-frontend")
         )
@@ -62,6 +67,10 @@ object AppConfigSuite extends SimpleIOSuite {
         |  audience = "db-watchdog-backend"
         |  authorized-party = "db-watchdog-frontend"
         |}
+        |otp {
+        |  ttl-seconds = 300
+        |  random-bytes = 18
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
@@ -76,7 +85,10 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(loaded.server.port == 8080) and
         expect(loaded.server.hostIp4s.toString == "localhost") and
         expect(loaded.server.portIp4s.value == 8080) and
-        expect(loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog")
+        expect(
+          loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog"
+        ) and
+        expect(loaded.otp.randomBytes == 18)
     )
   }
 }
