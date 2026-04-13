@@ -240,6 +240,83 @@ object AccessServiceSuite extends SimpleIOSuite {
     ) and expect(!created)
   }
 
+  test("authenticated effective-access syncs the caller from token claims before resolving access") {
+    var observedSyncInputs = Vector.empty[AuthenticatedUserSyncInput]
+    var eventOrder = Vector.empty[String]
+
+    val service = makeAccessService(
+      userRepository = stubUserRepository(foundUser = Some(user)),
+      teamDatabaseGrantRepository =
+        stubTeamDatabaseGrantRepository(List(databaseA.id)),
+      extensionRepository = stubExtensionRepository(Nil),
+      databaseRepository = stubDatabaseRepository(
+        List(databaseA),
+        onFindByIds = _ => eventOrder = eventOrder :+ "resolve-access"
+      ),
+      userService = recordingUserService(
+        resolvedUser = user,
+        onSync = input => {
+          observedSyncInputs = observedSyncInputs :+ input
+          eventOrder = eventOrder :+ "sync"
+        }
+      )
+    )
+
+    for {
+      access <- service.getEffectiveAccessForAuthenticatedUser(
+        AuthTestSupport.authUser
+      )
+    } yield expect(access.nonEmpty) and
+      expect(
+        observedSyncInputs == Vector(AuthTestSupport.authUser.toSyncInput)
+      ) and
+      expect(eventOrder == Vector("sync", "resolve-access"))
+  }
+
+  test("OTP issuance syncs the caller from token claims before access checks and credential writes") {
+    var observedSyncInputs = Vector.empty[AuthenticatedUserSyncInput]
+    var eventOrder = Vector.empty[String]
+
+    val service = makeAccessService(
+      userRepository = stubUserRepository(foundUser = Some(user)),
+      teamDatabaseGrantRepository =
+        stubTeamDatabaseGrantRepository(List(databaseA.id)),
+      extensionRepository = stubExtensionRepository(Nil),
+      databaseRepository = stubDatabaseRepository(
+        List(databaseA),
+        onFindById = _ => eventOrder = eventOrder :+ "require-database",
+        onFindByIds = _ => eventOrder = eventOrder :+ "resolve-access"
+      ),
+      temporaryCredentialRepository = stubTemporaryCredentialRepository(
+        onInvalidate = (_, _, _) => eventOrder = eventOrder :+ "invalidate",
+        onCreate = _ => eventOrder = eventOrder :+ "create"
+      ),
+      userService = recordingUserService(
+        resolvedUser = user,
+        onSync = input => {
+          observedSyncInputs = observedSyncInputs :+ input
+          eventOrder = eventOrder :+ "sync"
+        }
+      )
+    )
+
+    for {
+      issued <- service.issueOtp(AuthTestSupport.authUser, databaseA.id)
+    } yield expect(issued.database.id == databaseA.id) and
+      expect(
+        observedSyncInputs == Vector(AuthTestSupport.authUser.toSyncInput)
+      ) and
+      expect(
+        eventOrder == Vector(
+          "sync",
+          "require-database",
+          "resolve-access",
+          "invalidate",
+          "create"
+        )
+      )
+  }
+
   private def makeAccessService(
       userRepository: UserRepository,
       teamDatabaseGrantRepository: TeamDatabaseGrantRepository,
@@ -263,8 +340,18 @@ object AccessServiceSuite extends SimpleIOSuite {
       pureDatabase
     )
 
-  private def stubUserService(resolvedUser: User): UserService = new UserService {
-    def syncUser(input: AuthenticatedUserSyncInput) = IO.pure(resolvedUser)
+  private def stubUserService(resolvedUser: User): UserService =
+    recordingUserService(resolvedUser, _ => ())
+
+  private def recordingUserService(
+      resolvedUser: User,
+      onSync: AuthenticatedUserSyncInput => Unit
+  ): UserService = new UserService {
+    def syncUser(input: AuthenticatedUserSyncInput) = {
+      onSync(input)
+      IO.pure(resolvedUser)
+    }
+
     def getUserByKeycloakId(keycloackId: String) = IO.pure(resolvedUser)
   }
 
@@ -316,6 +403,7 @@ object AccessServiceSuite extends SimpleIOSuite {
 
   private def stubDatabaseRepository(
       databases: List[PersistedDatabase],
+      onFindById: UUID => Unit = _ => (),
       onFindByIds: Set[UUID] => Unit = _ => ()
   ): DatabaseRepository = new DatabaseRepository {
     override val tableName = "databases"
@@ -328,8 +416,10 @@ object AccessServiceSuite extends SimpleIOSuite {
 
     def list = databaseIndex.values.toList.pure[ConnectionIO]
 
-    def findById(id: UUID) =
+    def findById(id: UUID) = {
+      onFindById(id)
       databaseIndex.get(id).pure[ConnectionIO]
+    }
 
     def findByIds(ids: Set[UUID]) = {
       onFindByIds(ids)

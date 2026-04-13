@@ -21,7 +21,7 @@ import dbwatchdog.domain.{
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
-import dbwatchdog.service.AdminService
+import dbwatchdog.service.{AdminService, ServiceError}
 import dbwatchdog.support.AuthTestSupport
 
 object AdminRoutesSuite extends SimpleIOSuite {
@@ -81,6 +81,72 @@ object AdminRoutesSuite extends SimpleIOSuite {
       ) and
       expect(body.contains("technicalUser")) and
       expect(!body.contains("technicalPassword"))
+  }
+
+  test("admin database creation returns 400 for malformed JSON") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    for {
+      response <- AdminRoutes
+        .routes(recordingAdminService())
+        .orNotFound
+        .run(
+          Request[IO](Method.POST, uri"/admin/databases")
+            .withEntity("""{"engine":"postgres"""")
+        )
+    } yield expect(response.status == Status.BadRequest)
+  }
+
+  test("admin routes return 400 for invalid UUID path params") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    for {
+      response <- AdminRoutes
+        .routes(recordingAdminService())
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.DELETE,
+            uri"/admin/team-database-grants/not-a-uuid/cccccccc-cccc-cccc-cccc-cccccccccccc"
+          )
+        )
+    } yield expect(response.status == Status.BadRequest)
+  }
+
+  test("admin routes return 404 when the service reports a missing entity") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val service = new AdminService {
+      def listTeams() = IO.pure(List.empty[TeamResponse])
+      def listUsers() = IO.pure(List.empty[AdminUserResponse])
+      def listDatabases() = IO.pure(List.empty[DatabaseResponse])
+      def createDatabase(request: CreateDatabaseRequest) =
+        IO.raiseError(ServiceError.NotFound("database missing"))
+      def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
+        IO.unit
+      def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
+        IO.unit
+      def upsertUserDatabaseAccessExtension(
+          request: UpsertUserDatabaseAccessExtensionRequest
+      ) = IO.unit
+      def deleteUserDatabaseAccessExtension(userId: UUID, databaseId: UUID) =
+        IO.raiseError(ServiceError.NotFound("extension missing"))
+    }
+
+    for {
+      response <- AdminRoutes
+        .routes(service)
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.DELETE,
+            uri"/admin/user-database-access-extensions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          )
+        )
+    } yield expect(response.status == Status.NotFound)
   }
 
   private def recordingAdminService(
