@@ -124,6 +124,64 @@ object AccessContractRepositoryIntegrationSuite
       }
   }
 
+  test("database session repository lists newest sessions first") { db =>
+    withCleanDb(db) { db =>
+      val seeded = seedAccessGraph(db)
+      val olderStartedAt = Instant.parse("2026-03-01T00:05:00Z")
+      val newerStartedAt = Instant.parse("2026-03-01T00:10:00Z")
+      val expiresAt = Instant.parse("2026-03-01T00:30:00Z")
+
+      for {
+        ids <- seeded
+        olderCredential <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              ids.databaseId,
+              "older-hash",
+              expiresAt
+            )
+          )
+        )
+        newerCredential <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              ids.databaseId,
+              "newer-hash",
+              expiresAt
+            )
+          )
+        )
+        olderSession <- db.transact(
+          sessionRepo.create(
+            CreateDatabaseSessionInput(
+              ids.userId,
+              ids.databaseId,
+              olderCredential.id,
+              "127.0.0.1:5432",
+              olderStartedAt
+            )
+          )
+        )
+        newerSession <- db.transact(
+          sessionRepo.create(
+            CreateDatabaseSessionInput(
+              ids.userId,
+              ids.databaseId,
+              newerCredential.id,
+              "127.0.0.1:5433",
+              newerStartedAt
+            )
+          )
+        )
+        sessions <- db.transact(sessionRepo.list)
+      } yield expect(
+        sessions.map(_.id) == List(newerSession.id, olderSession.id)
+      )
+    }
+  }
+
   test("team, user, and database repositories list and find mirrored records") {
     db =>
       withCleanDb(db) { db =>

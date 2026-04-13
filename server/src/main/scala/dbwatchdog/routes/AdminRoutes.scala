@@ -16,10 +16,10 @@ import dbwatchdog.domain.{
 import dbwatchdog.service.AdminService
 
 object AdminRoutes {
-  def routes(
+  def authedRoutes(
       adminService: AdminService
-  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] = {
-    val authedRoutes = AuthedRoutes.of[AuthUser, IO] {
+  ): AuthedRoutes[AuthUser, IO] =
+    AuthedRoutes.of[AuthUser, IO] {
       case GET -> Root / "admin" / "teams" as authUser =>
         dbaOnly(authUser) {
           handleServiceErrors {
@@ -31,6 +31,13 @@ object AdminRoutes {
         dbaOnly(authUser) {
           handleServiceErrors {
             adminService.listUsers().flatMap(users => Ok(users.asJson))
+          }
+        }
+
+      case GET -> Root / "admin" / "sessions" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            adminService.listSessions().flatMap(sessions => Ok(sessions.asJson))
           }
         }
 
@@ -109,6 +116,8 @@ object AdminRoutes {
         }
     }
 
-    authMiddleware(authedRoutes)
-  }
+  def routes(
+      adminService: AdminService
+  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] =
+    authMiddleware(authedRoutes(adminService))
 }

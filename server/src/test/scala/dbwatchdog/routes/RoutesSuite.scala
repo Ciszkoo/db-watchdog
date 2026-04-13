@@ -9,12 +9,12 @@ import weaver.SimpleIOSuite
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
+  AdminDatabaseSessionResponse,
   AdminUserResponse,
   AuthenticatedUserSyncInput,
   CreateDatabaseRequest,
   DatabaseResponse,
   EffectiveDatabaseAccessResponse,
-  IssueOtpResponse,
   TeamResponse,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
@@ -34,6 +34,7 @@ object RoutesSuite extends SimpleIOSuite {
   private val stubAdminService: AdminService = new AdminService {
     def listTeams() = IO.pure(List.empty[TeamResponse])
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
+    def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
     def listDatabases() = IO.pure(List.empty[DatabaseResponse])
     def createDatabase(request: CreateDatabaseRequest) =
       IO.raiseError(new IllegalStateException("not used"))
@@ -83,6 +84,28 @@ object RoutesSuite extends SimpleIOSuite {
         .orNotFound
         .run(
           Request[IO](Method.POST, uri"/api/v1/users/me/sync")
+        )
+    } yield expect(response.status == Status.Ok)
+  }
+
+  test("mounts the admin routes under /api/v1") {
+    for {
+      response <- Routes
+        .all(stubUserService, stubAdminService, stubAccessService)
+        .orNotFound
+        .run(
+          Request[IO](Method.GET, uri"/api/v1/admin/users")
+        )
+    } yield expect(response.status == Status.Ok)
+  }
+
+  test("mounts the access routes under /api/v1") {
+    for {
+      response <- Routes
+        .all(stubUserService, stubAdminService, stubAccessService)
+        .orNotFound
+        .run(
+          Request[IO](Method.GET, uri"/api/v1/me/effective-access")
         )
     } yield expect(response.status == Status.Ok)
   }

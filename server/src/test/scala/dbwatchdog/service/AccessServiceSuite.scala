@@ -522,6 +522,9 @@ object AccessServiceSuite extends SimpleIOSuite {
       def create(input: dbwatchdog.domain.CreateDatabaseSessionInput) =
         failConnection("create should not be called")
 
+      def list =
+        failConnection("list should not be called")
+
       def markEnded(
           id: UUID,
           endedAt: Instant,

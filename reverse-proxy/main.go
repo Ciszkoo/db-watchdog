@@ -9,11 +9,17 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/Ciszkoo/db-watchdog/reverse-proxy/protocol/postgres"
+	"github.com/Ciszkoo/db-watchdog/reverse-proxy/systemdb"
 	"github.com/Ciszkoo/db-watchdog/reverse-proxy/tunnel"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const defaultSystemDBDSN = "postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable&search_path=db_watchdog,public"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(
@@ -26,7 +32,17 @@ func main() {
 		Level: slog.LevelDebug,
 	})))
 
-	// TODO: Connect to the main DB
+	systemDBPool, err := pgxpool.New(ctx, systemDBDSN())
+	if err != nil {
+		slog.Error("failed to connect to system db", "err", err)
+		os.Exit(1)
+	}
+	defer systemDBPool.Close()
+
+	if err := systemDBPool.Ping(ctx); err != nil {
+		slog.Error("failed to ping system db", "err", err)
+		os.Exit(1)
+	}
 
 	tlsConfig, err := loadTLSConfig()
 	if err != nil {
@@ -35,6 +51,7 @@ func main() {
 	}
 
 	handler := postgres.NewHandler(tlsConfig)
+	store := systemdb.NewStore(systemDBPool)
 
 	listener, err := net.Listen("tcp", ":5432")
 	if err != nil {
@@ -43,7 +60,7 @@ func main() {
 	}
 	defer listener.Close()
 
-	slog.Info("proxy listening", "addr", ":5423")
+	slog.Info("proxy listening", "addr", ":5432")
 
 	// Close listener when signal received. Temp to handle single connection.
 	go func() {
@@ -62,11 +79,16 @@ func main() {
 				continue
 			}
 		}
-		go handleConnection(ctx, conn, handler)
+		go handleConnection(ctx, conn, handler, store)
 	}
 }
 
-func handleConnection(ctx context.Context, clientConn net.Conn, handler *postgres.Handler) {
+func handleConnection(
+	ctx context.Context,
+	clientConn net.Conn,
+	handler *postgres.Handler,
+	store *systemdb.Store,
+) {
 	defer clientConn.Close()
 	clientIP := clientConn.RemoteAddr().String()
 
@@ -81,30 +103,60 @@ func handleConnection(ctx context.Context, clientConn net.Conn, handler *postgre
 		return
 	}
 
-	// TODO: verify token in system DB
-
-	// Connect with backend
-	backendConn, buffered, err := handler.ConnectToBackend(
-		"localhost:54321",
-		"proxy_user_1",
-		"proxy_pass",
+	credential, err := store.ConsumeOTP(
+		ctx,
+		result.User,
 		result.Database,
+		result.Password,
 	)
 	if err != nil {
-		slog.Error("backend connect failed", "err", err)
+		if errors.Is(err, systemdb.ErrAuthenticationFailed) {
+			slog.Warn("authentication failed", "user", result.User, "database", result.Database, "ip", clientIP)
+		} else {
+			slog.Error("system db auth lookup failed", "user", result.User, "database", result.Database, "ip", clientIP, "err", err)
+		}
+		postgres.SendError(result.Conn, "password authentication failed")
+		return
+	}
+
+	// Connect with backend
+	backendAddr := net.JoinHostPort(credential.Host, strconv.Itoa(credential.Port))
+	backendConn, buffered, err := handler.ConnectToBackend(
+		backendAddr,
+		credential.TechnicalUser,
+		credential.TechnicalPassword,
+		credential.DatabaseName,
+	)
+	if err != nil {
+		slog.Error("backend connect failed", "user", result.User, "database", credential.DatabaseName, "ip", clientIP, "err", err)
 		postgres.SendError(result.Conn, "could not connect to database")
 		return
 	}
 	defer backendConn.Close()
+
+	sessionID, err := store.StartSession(
+		ctx,
+		systemdb.StartSessionInput{
+			UserID:       credential.UserID,
+			DatabaseID:   credential.DatabaseID,
+			CredentialID: credential.CredentialID,
+			ClientAddr:   clientIP,
+			StartedAt:    time.Now().UTC(),
+		},
+	)
+	if err != nil {
+		backendConn.Close()
+		slog.Error("failed to create session", "user", result.User, "database", credential.DatabaseName, "ip", clientIP, "err", err)
+		postgres.SendError(result.Conn, "could not connect to database")
+		return
+	}
 
 	// Inform client on success
 	if err := postgres.SendAuthOk(result.Conn); err != nil {
 		return
 	}
 
-	// TODO: save session info in system DB
-
-	slog.Info("session started", "user", result.User, "database", result.Database, "ip", clientIP)
+	slog.Info("session started", "session_id", sessionID, "user", result.User, "database", credential.DatabaseName, "ip", clientIP)
 
 	// Forward the messages the backend sent after AuthOK to the client
 	// (ParameterStatus, BackendKeyData, ReadyForQuery)
@@ -115,7 +167,17 @@ func handleConnection(ctx context.Context, clientConn net.Conn, handler *postgre
 	// Open pipe
 	stats := tunnel.Pipe(result.Conn, backendConn)
 
-	slog.Info("session ended", "user", result.User, "bytes_sent", stats.BytesSent, "bytes_recv", stats.BytesRecv)
+	if err := store.EndSession(
+		ctx,
+		sessionID,
+		time.Now().UTC(),
+		stats.BytesSent,
+		stats.BytesRecv,
+	); err != nil {
+		slog.Warn("failed to mark session ended", "session_id", sessionID, "err", err)
+	}
+
+	slog.Info("session ended", "session_id", sessionID, "user", result.User, "bytes_sent", stats.BytesSent, "bytes_received", stats.BytesRecv)
 }
 
 func loadTLSConfig() (*tls.Config, error) {
@@ -127,4 +189,12 @@ func loadTLSConfig() (*tls.Config, error) {
 		return nil, err
 	}
 	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
+}
+
+func systemDBDSN() string {
+	if value := os.Getenv("SYSTEM_DB_DSN"); value != "" {
+		return value
+	}
+
+	return defaultSystemDBDSN
 }

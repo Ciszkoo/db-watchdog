@@ -9,6 +9,7 @@ import doobie.ConnectionIO
 
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
+  AdminDatabaseSessionResponse,
   AdminUserResponse,
   CreateDatabase,
   CreateDatabaseRequest,
@@ -26,6 +27,7 @@ import dbwatchdog.repository.Repositories
 trait AdminService {
   def listTeams(): IO[List[TeamResponse]]
   def listUsers(): IO[List[AdminUserResponse]]
+  def listSessions(): IO[List[AdminDatabaseSessionResponse]]
   def listDatabases(): IO[List[DatabaseResponse]]
   def createDatabase(request: CreateDatabaseRequest): IO[DatabaseResponse]
   def upsertTeamDatabaseGrant(
@@ -70,6 +72,57 @@ object AdminService {
                   )
                 )
                 .map(team => AdminUserResponse.fromDomain(user, team))
+            }
+          } yield responses
+        )
+
+      def listSessions(): IO[List[AdminDatabaseSessionResponse]] =
+        db.transact(
+          for {
+            sessions <- repos.databaseSessions.list
+            teams <- repos.teams.list
+            users <- repos.users.list
+            databases <- repos.databases.findByIds(
+              sessions.map(_.databaseId).toSet
+            )
+            teamIndex = teams.map(team => team.id -> team).toMap
+            usersWithTeams <- users.traverse { user =>
+              teamIndex
+                .get(user.teamId)
+                .liftTo[ConnectionIO](
+                  IllegalStateException(
+                    s"Missing team ${user.teamId} for user ${user.id}"
+                  )
+                )
+                .map(team =>
+                  user.id -> AdminUserResponse.fromDomain(user, team)
+                )
+            }
+            userIndex = usersWithTeams.toMap
+            databaseIndex = databases
+              .map(database => database.id -> database)
+              .toMap
+            responses <- sessions.traverse { session =>
+              for {
+                user <- userIndex
+                  .get(session.userId)
+                  .liftTo[ConnectionIO](
+                    IllegalStateException(
+                      s"Missing user ${session.userId} for session ${session.id}"
+                    )
+                  )
+                database <- databaseIndex
+                  .get(session.databaseId)
+                  .liftTo[ConnectionIO](
+                    IllegalStateException(
+                      s"Missing database ${session.databaseId} for session ${session.id}"
+                    )
+                  )
+              } yield AdminDatabaseSessionResponse.fromDomain(
+                session,
+                user,
+                DatabaseResponse.fromDomain(database)
+              )
             }
           } yield responses
         )

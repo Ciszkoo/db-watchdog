@@ -28,6 +28,8 @@ trait DatabaseSessionRepository extends TableFragment[UUID, DatabaseSession] {
 
   def create(input: CreateDatabaseSessionInput): ConnectionIO[DatabaseSession]
 
+  def list: ConnectionIO[List[DatabaseSession]]
+
   def markEnded(
       id: UUID,
       endedAt: Instant,
@@ -48,6 +50,11 @@ object DatabaseSessionRepository {
       """ ++ returningF)
         .query[DatabaseSession]
         .unique
+
+    def list: ConnectionIO[List[DatabaseSession]] =
+      (selectF ++ fr"ORDER BY database_sessions.started_at DESC, database_sessions.id DESC")
+        .query[DatabaseSession]
+        .to[List]
 
     def markEnded(
         id: UUID,

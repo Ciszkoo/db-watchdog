@@ -11,10 +11,10 @@ import dbwatchdog.auth.AuthUser
 import dbwatchdog.service.AccessService
 
 object AccessRoutes {
-  def routes(
+  def authedRoutes(
       accessService: AccessService
-  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] = {
-    val authedRoutes = AuthedRoutes.of[AuthUser, IO] {
+  ): AuthedRoutes[AuthUser, IO] =
+    AuthedRoutes.of[AuthUser, IO] {
       case GET -> Root / "me" / "effective-access" as authUser =>
         handleServiceErrors {
           accessService
@@ -43,6 +43,8 @@ object AccessRoutes {
         }
     }
 
-    authMiddleware(authedRoutes)
-  }
+  def routes(
+      accessService: AccessService
+  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] =
+    authMiddleware(authedRoutes(accessService))
 }
