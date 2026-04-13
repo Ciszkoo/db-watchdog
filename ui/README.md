@@ -1,87 +1,42 @@
-# Welcome to React Router!
+# UI Module
 
-A modern, production-ready template for building full-stack React applications using React Router.
+This module contains the React Router frontend for `db-watchdog`.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Preferred Workflow
 
-## Features
-
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
-
-## Getting Started
-
-### Installation
-
-Install the dependencies:
+Run frontend commands from the repository root through the shared `Makefile`:
 
 ```bash
-npm install
+make ui-install
+make ui-dev
+make ui-lint
+make ui-typecheck
+make ui-build
 ```
 
-### Development
-
-Start the development server with HMR:
+List every available root target with:
 
 ```bash
-npm run dev
+make help
 ```
 
-Your application will be available at `http://localhost:5173`.
+## Direct Module Commands
 
-## Building for Production
-
-Create a production build:
+If you need to work inside `ui/` directly, the equivalent commands are:
 
 ```bash
-npm run build
+pnpm install
+pnpm dev
+pnpm lint
+pnpm typecheck
+pnpm build
+pnpm start
 ```
 
-## Deployment
+## Runtime Defaults
 
-### Docker Deployment
+- frontend dev server: `http://localhost:5173`
+- Keycloak URL: `http://localhost:8180`
+- backend API base URL: `http://localhost:8080/api/v1`
 
-To build and run using Docker:
-
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+The frontend authenticates through Keycloak and synchronizes the current user with `POST /users/me/sync` after startup.

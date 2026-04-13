@@ -2,6 +2,25 @@
 
 `db-watchdog` is a multi-module project built around database access control and observability.
 
+## Root Makefile
+
+The repository now exposes a root `Makefile`, so the common workflows for every module can be run without leaving the project root.
+
+Start with:
+
+```bash
+make help
+```
+
+Common targets:
+
+- `make bootstrap`
+- `make server-run`
+- `make ui-dev`
+- `make proxy-run`
+- `make build`
+- `make check`
+
 ## Modules
 
 - `reverse-proxy/`: Go PostgreSQL reverse proxy.
@@ -30,8 +49,7 @@ This starts:
 The backend uses `sbt` and reads configuration from [application.conf](/home/ciszko/Code/db-watchdog/server/src/main/resources/application.conf).
 
 ```bash
-cd server
-sbt run
+make server-run
 ```
 
 By default it listens on `http://localhost:8080`.
@@ -59,10 +77,9 @@ The backend now issues short-lived OTPs backed by stored SHA-256 hashes, but pro
 Backend tests are split into unit and integration suites:
 
 ```bash
-cd server
-sbt test
-sbt "IntegrationTest / test"
-sbt coverage test "IntegrationTest / test" coverageReport
+make server-test
+make server-it-test
+make server-coverage
 ```
 
 Integration tests use Testcontainers, so local Docker access is required.
@@ -73,9 +90,8 @@ Coverage reports can be generated locally and in CI, but there is no fixed `100%
 The frontend uses `pnpm`.
 
 ```bash
-cd ui
-pnpm install
-pnpm dev
+make ui-install
+make ui-dev
 ```
 
 Default frontend-related config:
@@ -90,41 +106,47 @@ During startup the UI authenticates through Keycloak and then calls `POST /users
 The reverse proxy is a Go module.
 
 ```bash
-cd reverse-proxy
-TLS_CERT_FILE=../certs/server.crt TLS_KEY_FILE=../certs/server.key go run .
+make proxy-run
 ```
 
 It currently accepts PostgreSQL client connections on local TCP port `5432` and connects to the external PostgreSQL instance on `localhost:54321`.
+The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
 ## Validation
 
 ### Backend
 
 ```bash
-cd server
-sbt scalafix
-sbt scalafmt
-sbt test
-sbt "IntegrationTest / test"
-sbt coverage test "IntegrationTest / test" coverageReport
-sbt compile
+make server-scalafix
+make server-format
+make server-format-check
+make server-test
+make server-it-test
+make server-coverage
+make server-compile
 ```
 
 ### Frontend
 
 ```bash
-cd ui
-pnpm lint
-pnpm typecheck
-pnpm build
+make ui-lint
+make ui-typecheck
+make ui-build
 ```
 
 ### Reverse Proxy
 
 ```bash
-cd reverse-proxy
-go test ./...
-go build ./...
+make proxy-test
+make proxy-build
+```
+
+### Cross-Module
+
+```bash
+make build
+make check
 ```
 
 ## Project Notes
