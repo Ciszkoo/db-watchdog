@@ -15,7 +15,6 @@ make help
 Common targets:
 
 - `make bootstrap`
-- `make infra-up`
 - `make server-run`
 - `make ui-dev`
 - `make proxy-run`
@@ -34,7 +33,7 @@ Common targets:
 Start the local infrastructure:
 
 ```bash
-make infra-up
+docker compose up -d
 ```
 
 This starts:
@@ -112,6 +111,7 @@ make proxy-run
 
 It currently accepts PostgreSQL client connections on local TCP port `5432` and connects to the external PostgreSQL instance on `localhost:54321`.
 The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
 ## Validation
 

@@ -3,7 +3,6 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ROOT_DIR := $(abspath $(CURDIR))
-DOCKER_COMPOSE := docker compose
 GO := go
 SBT := sbt
 PNPM := pnpm
@@ -17,9 +16,8 @@ PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/server.key
 
 .PHONY: \
 	help \
-	require-go require-sbt require-pnpm require-docker \
+	require-go require-sbt require-pnpm \
 	bootstrap proxy-deps server-deps ui-install \
-	infra-up infra-down infra-ps infra-logs \
 	proxy-run proxy-test proxy-build proxy-check \
 	server-run server-scalafix server-format server-format-check server-test server-it-test server-coverage server-compile server-check \
 	ui-dev ui-start ui-lint ui-lint-fix ui-typecheck ui-build ui-check \
@@ -37,9 +35,6 @@ require-sbt:
 require-pnpm:
 	@command -v $(PNPM) >/dev/null 2>&1 || { echo "Missing required tool in PATH: $(PNPM)"; exit 1; }
 
-require-docker:
-	@command -v docker >/dev/null 2>&1 || { echo "Missing required tool in PATH: docker"; exit 1; }
-
 bootstrap: proxy-deps server-deps ui-install ## Download module dependencies needed for local work.
 
 proxy-deps: require-go ## Download Go dependencies for the reverse proxy.
@@ -50,18 +45,6 @@ server-deps: require-sbt ## Download Scala dependencies for the backend.
 
 ui-install: require-pnpm ## Install frontend dependencies with pnpm.
 	cd "$(UI_DIR)" && $(PNPM) install
-
-infra-up: require-docker ## Start local infrastructure containers in the background.
-	$(DOCKER_COMPOSE) up -d
-
-infra-down: require-docker ## Stop local infrastructure containers.
-	$(DOCKER_COMPOSE) down
-
-infra-ps: require-docker ## Show local infrastructure container status.
-	$(DOCKER_COMPOSE) ps
-
-infra-logs: require-docker ## Stream local infrastructure logs.
-	$(DOCKER_COMPOSE) logs -f
 
 proxy-run: require-go ## Run the reverse proxy with the default local TLS certificate.
 	cd "$(PROXY_DIR)" && TLS_CERT_FILE="$(PROXY_TLS_CERT_FILE)" TLS_KEY_FILE="$(PROXY_TLS_KEY_FILE)" $(GO) run .
