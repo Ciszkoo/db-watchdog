@@ -1,6 +1,7 @@
 package dbwatchdog.auth
 
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.{IO, Resource}
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
@@ -24,16 +25,26 @@ import dbwatchdog.config.AppConfig
 import dbwatchdog.support.AuthTestSupport
 
 object JwtAuthSuite extends IOSuite {
-  type Res = AppConfig.KeycloakConfig
+  final case class TestContext(
+      config: AppConfig.KeycloakConfig,
+      jwksRequests: AtomicInteger
+  )
 
-  override def sharedResource: Resource[IO, AppConfig.KeycloakConfig] =
+  type Res = TestContext
+
+  override def sharedResource: Resource[IO, TestContext] =
+    testContextResource
+
+  private def testContextResource: Resource[IO, TestContext] =
     Resource
       .make {
         IO.blocking {
+          val jwksRequests = AtomicInteger(0)
           val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
           server.createContext(
             "/jwks",
             exchange => {
+              jwksRequests.incrementAndGet()
               val body =
                 s"""{"keys":[${AuthTestSupport.rsaJwk.toPublicJWK.toJSONString}]}"""
               val bytes = body.getBytes()
@@ -47,14 +58,17 @@ object JwtAuthSuite extends IOSuite {
             }
           )
           server.start()
-          server
+          (server, jwksRequests)
         }
-      } { server =>
+      } { case (server, _) =>
         IO.blocking(server.stop(0))
       }
-      .map { server =>
-        AuthTestSupport.keycloakConfig(
-          s"http://127.0.0.1:${server.getAddress.getPort}/jwks"
+      .map { case (server, jwksRequests) =>
+        TestContext(
+          config = AuthTestSupport.keycloakConfig(
+            s"http://127.0.0.1:${server.getAddress.getPort}/jwks"
+          ),
+          jwksRequests = jwksRequests
         )
       }
 
@@ -69,56 +83,52 @@ object JwtAuthSuite extends IOSuite {
       }
     ).orNotFound
 
-  test("authenticates a request with a valid signed bearer token") { config =>
-    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(config)
-
-    val token = AuthTestSupport.signedJwt(AuthTestSupport.validJwtPayload())
-    val request = Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
+  private def requestWithToken(token: String): Request[IO] =
+    Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
       .putHeaders(
         Authorization(Credentials.Token(AuthScheme.Bearer, token))
       )
 
+  test("authenticates a request with a valid signed bearer token") { ctx =>
+    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
+
+    val token = AuthTestSupport.signedJwt(AuthTestSupport.validJwtPayload())
+
     for {
-      response <- securedApp.run(request)
+      response <- securedApp.run(requestWithToken(token))
       body <- response.as[String]
     } yield expect(response.status == Status.Ok) and
       expect(body == s"${AuthTestSupport.authUser.username}:DBA,user:true")
   }
 
-  test("returns unauthorized when the authorization header is missing") {
-    config =>
-      given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(config)
-
-      for {
-        response <- securedApp.run(
-          Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
-        )
-      } yield expect(response.status == Status.Unauthorized)
-  }
-
-  test("returns unauthorized when the token is malformed") { config =>
-    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(config)
-
-    val request = Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
-      .putHeaders(
-        Authorization(Credentials.Token(AuthScheme.Bearer, "not-a-jwt"))
-      )
+  test("returns unauthorized when the authorization header is missing") { ctx =>
+    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
 
     for {
-      response <- securedApp.run(request)
+      response <- securedApp.run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
+      )
     } yield expect(response.status == Status.Unauthorized)
   }
 
-  test("rejects unsigned tokens") { config =>
+  test("returns unauthorized when the token is malformed") { ctx =>
+    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
+
+    for {
+      response <- securedApp.run(requestWithToken("not-a-jwt"))
+    } yield expect(response.status == Status.Unauthorized)
+  }
+
+  test("rejects unsigned tokens") { ctx =>
     for {
       result <- JwtAuth.decodeToken(
         AuthTestSupport.unsignedJwt(AuthTestSupport.validJwtPayload()),
-        config
+        ctx.config
       )
     } yield expect(result.isEmpty)
   }
 
-  test("rejects tokens signed with the wrong key") { config =>
+  test("rejects tokens signed with the wrong key") { ctx =>
     val wrongKey =
       new RSAKeyGenerator(2048).keyID(AuthTestSupport.keyId).generate()
     val badToken = {
@@ -137,11 +147,11 @@ object JwtAuthSuite extends IOSuite {
     }
 
     for {
-      result <- JwtAuth.decodeToken(badToken, config)
+      result <- JwtAuth.decodeToken(badToken, ctx.config)
     } yield expect(result.isEmpty)
   }
 
-  test("rejects tokens with the wrong issuer") { config =>
+  test("rejects tokens with the wrong issuer") { ctx =>
     for {
       result <- JwtAuth.decodeToken(
         AuthTestSupport.signedJwt(
@@ -149,12 +159,12 @@ object JwtAuthSuite extends IOSuite {
             issuerOverride = "https://issuer.example.test/realms/other"
           )
         ),
-        config
+        ctx.config
       )
     } yield expect(result.isEmpty)
   }
 
-  test("rejects tokens with the wrong audience") { config =>
+  test("rejects tokens with the wrong audience") { ctx =>
     for {
       result <- JwtAuth.decodeToken(
         AuthTestSupport.signedJwt(
@@ -163,43 +173,129 @@ object JwtAuthSuite extends IOSuite {
             authorizedPartyOverride = "other-client"
           )
         ),
-        config
+        ctx.config
       )
     } yield expect(result.isEmpty)
   }
 
-  test("accepts tokens with matching azp when audience is missing") { config =>
+  test("accepts tokens with matching azp when audience is missing") { ctx =>
     val payload = AuthTestSupport
       .validJwtPayload()
       .mapObject(_.remove("aud"))
 
     for {
-      result <- JwtAuth.decodeToken(AuthTestSupport.signedJwt(payload), config)
+      result <- JwtAuth.decodeToken(
+        AuthTestSupport.signedJwt(payload),
+        ctx.config
+      )
     } yield expect(result.nonEmpty)
   }
 
-  test("accepts tokens when nbf is missing") { config =>
+  test("rejects tokens with the wrong audience even when azp matches") { ctx =>
+    for {
+      result <- JwtAuth.decodeToken(
+        AuthTestSupport.signedJwt(
+          AuthTestSupport.validJwtPayload(audienceOverride = "other-audience")
+        ),
+        ctx.config
+      )
+    } yield expect(result.isEmpty)
+  }
+
+  test("accepts tokens with the correct audience even when azp is missing") {
+    ctx =>
+      val payload = AuthTestSupport
+        .validJwtPayload()
+        .mapObject(_.remove("azp"))
+
+      for {
+        result <- JwtAuth.decodeToken(
+          AuthTestSupport.signedJwt(payload),
+          ctx.config
+        )
+      } yield expect(result.nonEmpty)
+  }
+
+  test("accepts tokens when nbf is missing") { ctx =>
     val payload = AuthTestSupport
       .validJwtPayload()
       .mapObject(_.remove("nbf"))
 
     for {
-      result <- JwtAuth.decodeToken(AuthTestSupport.signedJwt(payload), config)
+      result <- JwtAuth.decodeToken(
+        AuthTestSupport.signedJwt(payload),
+        ctx.config
+      )
     } yield expect(result.nonEmpty)
   }
 
-  test("rejects tokens missing the team claim") { config =>
+  test("rejects tokens when nbf is in the future") { ctx =>
+    val now = java.time.Instant.now()
+    val payload = AuthTestSupport.validJwtPayload(
+      now = now,
+      notBeforeEpochSecondOverride = Some(now.plusSeconds(120).getEpochSecond)
+    )
+
+    for {
+      result <- JwtAuth.decodeToken(
+        AuthTestSupport.signedJwt(payload),
+        ctx.config
+      )
+    } yield expect(result.isEmpty)
+  }
+
+  test("rejects tokens missing the team claim") { ctx =>
     val payload = AuthTestSupport
       .validJwtPayload()
       .mapObject(_.remove("team"))
 
     for {
-      result <- JwtAuth.decodeToken(AuthTestSupport.signedJwt(payload), config)
+      result <- JwtAuth.decodeToken(
+        AuthTestSupport.signedJwt(payload),
+        ctx.config
+      )
     } yield expect(result.isEmpty)
   }
 
-  test("decodes the DBA role from JWT claims") { config =>
-    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(config)
+  test("reuses cached JWKS for repeated validation with the same middleware") {
+    _ =>
+      testContextResource.use { ctx =>
+        given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
+
+        val token = AuthTestSupport.signedJwt(AuthTestSupport.validJwtPayload())
+
+        for {
+          first <- securedApp.run(requestWithToken(token))
+          second <- securedApp.run(requestWithToken(token))
+        } yield expect(first.status == Status.Ok) and
+          expect(second.status == Status.Ok) and
+          expect(ctx.jwksRequests.get() == 1)
+      }
+  }
+
+  test("refreshes JWKS on unknown kid and still rejects the token cleanly") {
+    _ =>
+      testContextResource.use { ctx =>
+        given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
+
+        val validToken =
+          AuthTestSupport.signedJwt(AuthTestSupport.validJwtPayload())
+        val unknownKidToken = AuthTestSupport.signedJwt(
+          AuthTestSupport.validJwtPayload(),
+          kid = "missing-kid"
+        )
+
+        for {
+          first <- securedApp.run(requestWithToken(validToken))
+          second <- securedApp.run(requestWithToken(unknownKidToken))
+        } yield expect(first.status == Status.Ok) and
+          expect(second.status == Status.Unauthorized) and
+          expect(ctx.jwksRequests.get() == 2)
+      }
+  }
+
+  test("decodes the DBA role from JWT claims") { ctx =>
+    given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(ctx.config)
 
     val payload = AuthTestSupport
       .validJwtPayload()
@@ -215,13 +311,9 @@ object JwtAuthSuite extends IOSuite {
       )
 
     val token = AuthTestSupport.signedJwt(payload)
-    val request = Request[IO](Method.GET, Uri.unsafeFromString("/secured"))
-      .putHeaders(
-        Authorization(Credentials.Token(AuthScheme.Bearer, token))
-      )
 
     for {
-      response <- securedApp.run(request)
+      response <- securedApp.run(requestWithToken(token))
       body <- response.as[String]
     } yield expect(response.status == Status.Ok) and
       expect(body.endsWith(":true"))

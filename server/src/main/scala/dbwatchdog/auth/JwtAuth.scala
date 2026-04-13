@@ -1,7 +1,6 @@
 package dbwatchdog.auth
 
 import java.net.URI
-import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.time.Instant
 import scala.jdk.CollectionConverters.*
 
@@ -9,9 +8,11 @@ import cats.data.{Kleisli, OptionT}
 import cats.effect.IO
 import cats.effect.kernel.Async
 import com.nimbusds.jose.crypto.{ECDSAVerifier, RSASSAVerifier}
-import com.nimbusds.jose.jwk.{ECKey, JWKSet, RSAKey}
+import com.nimbusds.jose.jwk.source.{JWKSource, JWKSourceBuilder}
+import com.nimbusds.jose.jwk.{ECKey, JWK, JWKMatcher, JWKSelector, RSAKey}
+import com.nimbusds.jose.proc.SecurityContext
 import com.nimbusds.jwt.SignedJWT
-import io.circe.parser.decode
+import io.circe.parser.decode as decodeJson
 import io.circe.{Decoder, HCursor}
 import org.http4s.headers.Authorization
 import org.http4s.server.AuthMiddleware
@@ -58,23 +59,26 @@ object AuthUser {
 }
 
 object JwtAuth {
-  private val httpClient = HttpClient.newHttpClient()
+  private val jwkCacheTtlMillis = 5 * 60 * 1000L
+  private val jwkCacheRefreshTimeoutMillis = 15 * 1000L
+  private object NoSecurityContext extends SecurityContext
 
   def middleware(config: KeycloakConfig): AuthMiddleware[IO, AuthUser] =
+    val validator = JwtValidator(config)
     AuthMiddleware.noSpider(
       Kleisli { request =>
-        OptionT(extractAndValidateToken(request, config))
+        OptionT(extractAndValidateToken(request, validator))
       },
       _ => IO.pure(Response[IO](status = Status.Unauthorized))
     )
 
   private def extractAndValidateToken(
       request: Request[IO],
-      config: KeycloakConfig
+      validator: JwtValidator
   ): IO[Option[AuthUser]] =
     request.headers.get[Authorization].map(_.credentials) match
       case Some(Credentials.Token(AuthScheme.Bearer, token)) =>
-        decodeToken(token, config)
+        decodeToken(token, validator)
       case _ =>
         Async[IO].pure(None)
 
@@ -82,93 +86,114 @@ object JwtAuth {
       token: String,
       config: KeycloakConfig
   ): IO[Option[AuthUser]] =
+    decodeToken(token, JwtValidator(config))
+
+  private def decodeToken(
+      token: String,
+      validator: JwtValidator
+  ): IO[Option[AuthUser]] =
     Async[IO]
       .blocking {
-        val signedJwt = SignedJWT.parse(token)
-
-        validateHeader(signedJwt)
-        validateSignature(signedJwt, config)
-        validateClaims(signedJwt, config)
-
-        decode[AuthUser](signedJwt.getPayload.toString).toOption
+        validator.decode(token)
       }
       .attempt
       .map(_.toOption.flatten)
 
-  private def validateHeader(jwt: SignedJWT): Unit = {
-    val header = jwt.getHeader
+  private final case class JwtValidator(config: KeycloakConfig) {
+    private val jwkSource: JWKSource[SecurityContext] =
+      JWKSourceBuilder
+        .create[SecurityContext](URI.create(config.jwksUrl).toURL)
+        .cache(jwkCacheTtlMillis, jwkCacheRefreshTimeoutMillis)
+        .refreshAheadCache(false)
+        .build()
 
-    if header == null || header.getAlgorithm == null then
-      throw IllegalArgumentException("Token header is missing algorithm")
+    def decode(token: String): Option[AuthUser] = {
+      val signedJwt = SignedJWT.parse(token)
 
-    if header.getAlgorithm.getName.equalsIgnoreCase("none") then
-      throw IllegalArgumentException("Unsigned tokens are not accepted")
+      validateHeader(signedJwt)
+      validateSignature(signedJwt)
+      validateClaims(signedJwt)
 
-    if Option(header.getKeyID).forall(_.trim.isEmpty) then
-      throw IllegalArgumentException("Token header is missing kid")
-  }
-
-  private def validateSignature(
-      jwt: SignedJWT,
-      config: KeycloakConfig
-  ): Unit = {
-    val jwkSet = loadJwkSet(config)
-    val kid = jwt.getHeader.getKeyID
-    val jwk = Option(jwkSet.getKeyByKeyId(kid))
-      .getOrElse(throw IllegalArgumentException("Unable to resolve JWK"))
-
-    val verified = jwk match
-      case rsaKey: RSAKey =>
-        jwt.verify(RSASSAVerifier(rsaKey.toRSAPublicKey))
-      case ecKey: ECKey =>
-        jwt.verify(ECDSAVerifier(ecKey.toECPublicKey))
-      case _ =>
-        throw IllegalArgumentException("Unsupported JWK type")
-
-    if !verified then
-      throw IllegalArgumentException("JWT signature verification failed")
-  }
-
-  private def validateClaims(jwt: SignedJWT, config: KeycloakConfig): Unit = {
-    val claims = jwt.getJWTClaimsSet
-    val now = Instant.now()
-    val clockSkew = config.clockSkewSeconds
-
-    if claims == null then
-      throw IllegalArgumentException("Token is missing claims")
-
-    if claims.getIssuer != config.issuer then
-      throw IllegalArgumentException("JWT issuer mismatch")
-
-    val audience =
-      Option(claims.getAudience).map(_.asScala.toSet).getOrElse(Set.empty)
-    val audienceMatches = audience.contains(config.audience)
-    val authorizedPartyMatches =
-      Option(claims.getStringClaim("azp")).contains(config.authorizedParty)
-    if !audienceMatches && !authorizedPartyMatches then
-      throw IllegalArgumentException("JWT audience and azp mismatch")
-
-    val expiresAt = Option(claims.getExpirationTime)
-      .map(_.toInstant)
-      .getOrElse(throw IllegalArgumentException("JWT is missing exp"))
-    if expiresAt.isBefore(now.minusSeconds(clockSkew)) then
-      throw IllegalArgumentException("JWT is expired")
-
-    Option(claims.getNotBeforeTime).map(_.toInstant).foreach { notBefore =>
-      if notBefore.isAfter(now.plusSeconds(clockSkew)) then
-        throw IllegalArgumentException("JWT is not yet valid")
+      decodeJson[AuthUser](signedJwt.getPayload.toString).toOption
     }
-  }
 
-  private def loadJwkSet(config: KeycloakConfig): JWKSet = {
-    val request =
-      HttpRequest.newBuilder(URI.create(config.jwksUrl)).GET().build()
-    val response =
-      httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+    private def validateHeader(jwt: SignedJWT): Unit = {
+      val header = jwt.getHeader
 
-    if response.statusCode() != 200 then
-      throw IllegalArgumentException("Unable to fetch JWKS")
+      if header == null || header.getAlgorithm == null then
+        throw IllegalArgumentException("Token header is missing algorithm")
 
-    JWKSet.parse(response.body())
+      if header.getAlgorithm.getName.equalsIgnoreCase("none") then
+        throw IllegalArgumentException("Unsigned tokens are not accepted")
+
+      if Option(header.getKeyID).forall(_.trim.isEmpty) then
+        throw IllegalArgumentException("Token header is missing kid")
+    }
+
+    private def validateSignature(jwt: SignedJWT): Unit = {
+      val jwk = resolveJwk(jwt)
+
+      val verified = jwk match
+        case rsaKey: RSAKey =>
+          jwt.verify(RSASSAVerifier(rsaKey.toRSAPublicKey))
+        case ecKey: ECKey =>
+          jwt.verify(ECDSAVerifier(ecKey.toECPublicKey))
+        case _ =>
+          throw IllegalArgumentException("Unsupported JWK type")
+
+      if !verified then
+        throw IllegalArgumentException("JWT signature verification failed")
+    }
+
+    private def resolveJwk(jwt: SignedJWT): JWK = {
+      val kid = jwt.getHeader.getKeyID
+      val selector = JWKSelector(
+        JWKMatcher
+          .Builder()
+          .keyID(kid)
+          .build()
+      )
+      val keys = jwkSource.get(selector, NoSecurityContext).asScala.toList
+
+      keys
+        .find(key => Option(key.getKeyID).contains(kid))
+        .getOrElse(throw IllegalArgumentException("Unable to resolve JWK"))
+    }
+
+    private def validateClaims(jwt: SignedJWT): Unit = {
+      val claims = jwt.getJWTClaimsSet
+      val now = Instant.now()
+      val clockSkew = config.clockSkewSeconds
+
+      if claims == null then
+        throw IllegalArgumentException("Token is missing claims")
+
+      if claims.getIssuer != config.issuer then
+        throw IllegalArgumentException("JWT issuer mismatch")
+
+      val audience = Option(claims.getAudience)
+        .map(_.asScala.map(_.trim).filter(_.nonEmpty).toSet)
+        .getOrElse(Set.empty)
+
+      if audience.nonEmpty then
+        if !audience.contains(config.audience) then
+          throw IllegalArgumentException("JWT audience mismatch")
+      else
+        // `azp` is a compatibility fallback only for tokens that omit `aud`.
+        if !Option(claims.getStringClaim("azp"))
+            .contains(config.authorizedParty)
+        then throw IllegalArgumentException("JWT authorized party mismatch")
+
+      val expiresAt = Option(claims.getExpirationTime)
+        .map(_.toInstant)
+        .getOrElse(throw IllegalArgumentException("JWT is missing exp"))
+      if expiresAt.isBefore(now.minusSeconds(clockSkew)) then
+        throw IllegalArgumentException("JWT is expired")
+
+      Option(claims.getNotBeforeTime).map(_.toInstant).foreach { notBefore =>
+        if notBefore.isAfter(now.plusSeconds(clockSkew)) then
+          throw IllegalArgumentException("JWT is not yet valid")
+      }
+    }
   }
 }

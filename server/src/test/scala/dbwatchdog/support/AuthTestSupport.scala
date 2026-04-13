@@ -88,7 +88,8 @@ object AuthTestSupport {
       now: Instant = Instant.now(),
       issuerOverride: String = issuer,
       audienceOverride: String = audience,
-      authorizedPartyOverride: String = authorizedParty
+      authorizedPartyOverride: String = authorizedParty,
+      notBeforeEpochSecondOverride: Option[Long] = None
   ): Json = Json.obj(
     "iss" -> Json.fromString(issuerOverride),
     "aud" -> Json.arr(Json.fromString(audienceOverride)),
@@ -103,7 +104,11 @@ object AuthTestSupport {
       "roles" -> authUser.roles.toList.sorted.asJson
     ),
     "exp" -> Json.fromLong(now.plusSeconds(3600).getEpochSecond),
-    "nbf" -> Json.fromLong(now.minusSeconds(60).getEpochSecond)
+    "nbf" -> Json.fromLong(
+      notBeforeEpochSecondOverride.getOrElse(
+        now.minusSeconds(60).getEpochSecond
+      )
+    )
   )
 
   def keycloakConfig(jwksUrl: String): AppConfig.KeycloakConfig =
