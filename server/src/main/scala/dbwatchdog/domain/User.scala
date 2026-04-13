@@ -29,14 +29,13 @@ final case class UpsertUserInput(
     teamName: String
 )
 
-// JSON payloads
-final case class SyncUserRequest(
+final case class AuthenticatedUserSyncInput(
     keycloakId: String,
     email: String,
     firstName: String,
     lastName: String,
     team: String
-) derives ConfiguredCodec
+)
 
 final case class UpdateUserRequest(
     firstName: Option[String],

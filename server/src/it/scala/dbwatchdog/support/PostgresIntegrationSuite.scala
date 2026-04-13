@@ -66,7 +66,13 @@ object IntegrationDb {
           schema = "public",
           threadPoolSize = 2
         ),
-        keycloak = AppConfig.KeycloakConfig()
+        keycloak = AppConfig.KeycloakConfig(
+          issuer = "https://issuer.example.test/realms/db-watchdog",
+          jwksUrl = "https://issuer.example.test/jwks",
+          audience = "db-watchdog-backend",
+          authorizedParty = "db-watchdog-frontend",
+          clockSkewSeconds = 30
+        )
       )
       _ <- Resource.eval {
         given AppConfig = config

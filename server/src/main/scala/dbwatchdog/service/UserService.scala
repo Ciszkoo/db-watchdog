@@ -3,13 +3,13 @@ package dbwatchdog.service
 import cats.effect.IO
 
 import dbwatchdog.database.Database
-import dbwatchdog.domain.{UpsertUserInput, User}
+import dbwatchdog.domain.{AuthenticatedUserSyncInput, UpsertUserInput, User}
 import dbwatchdog.repository.{TeamRepository, UserRepository}
 
 trait UserService {
 
   def syncUser(
-      input: UpsertUserInput
+      input: AuthenticatedUserSyncInput
   ): IO[User]
 
   def getUserByKeycloakId(keycloackId: String): IO[User]
@@ -25,12 +25,21 @@ object UserService {
     new UserService {
 
       def syncUser(
-          input: UpsertUserInput
+          input: AuthenticatedUserSyncInput
       ): IO[dbwatchdog.domain.User] =
         db.transact(
           for {
-            team <- teamRepo.findOrCreate(input.teamName)
-            user <- userRepo.upsert(input, team.id)
+            team <- teamRepo.findOrCreate(input.team)
+            user <- userRepo.upsert(
+              UpsertUserInput(
+                keycloakId = input.keycloakId,
+                email = input.email,
+                firstName = input.firstName,
+                lastName = input.lastName,
+                teamName = input.team
+              ),
+              team.id
+            )
           } yield user
         )
 

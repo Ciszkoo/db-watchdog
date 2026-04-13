@@ -21,14 +21,24 @@ object AppConfigSuite extends SimpleIOSuite {
         |  schema = "public"
         |  thread-pool-size = 5
         |}
-        |keycloak {}
+        |keycloak {
+        |  issuer = "https://issuer.example.test/realms/db-watchdog"
+        |  jwks-url = "https://issuer.example.test/jwks"
+        |  audience = "db-watchdog-backend"
+        |  authorized-party = "db-watchdog-frontend"
+        |  clock-skew-seconds = 30
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
     IO.pure(
       expect(loaded.exists(_.server.host == "127.0.0.1")) and
         expect(loaded.exists(_.server.port == 8081)) and
-        expect(loaded.exists(_.db.schema == "public"))
+        expect(loaded.exists(_.db.schema == "public")) and
+        expect(loaded.exists(_.keycloak.audience == "db-watchdog-backend")) and
+        expect(
+          loaded.exists(_.keycloak.authorizedParty == "db-watchdog-frontend")
+        )
     )
   }
 
@@ -46,7 +56,12 @@ object AppConfigSuite extends SimpleIOSuite {
         |  schema = "public"
         |  thread-pool-size = 5
         |}
-        |keycloak {}
+        |keycloak {
+        |  issuer = "https://issuer.example.test/realms/db-watchdog"
+        |  jwks-url = "https://issuer.example.test/jwks"
+        |  audience = "db-watchdog-backend"
+        |  authorized-party = "db-watchdog-frontend"
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
@@ -61,7 +76,7 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(loaded.server.port == 8080) and
         expect(loaded.server.hostIp4s.toString == "localhost") and
         expect(loaded.server.portIp4s.value == 8080) and
-        expect(loaded.db.url == "jdbc:postgresql://localhost:5432/db_watchdog")
+        expect(loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog")
     )
   }
 }

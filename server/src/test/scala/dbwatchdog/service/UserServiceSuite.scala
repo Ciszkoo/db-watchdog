@@ -10,19 +10,19 @@ import doobie.free.connection.ConnectionOp
 import weaver.SimpleIOSuite
 
 import dbwatchdog.database.Database
-import dbwatchdog.domain.{Team, UpsertUserInput}
+import dbwatchdog.domain.{AuthenticatedUserSyncInput, Team, UpsertUserInput}
 import dbwatchdog.repository.{TeamRepository, UserRepository}
 import dbwatchdog.support.AuthTestSupport
 
 object UserServiceSuite extends SimpleIOSuite {
 
   test("syncUser finds or creates the team and upserts the user") {
-    val input = UpsertUserInput(
+    val input = AuthenticatedUserSyncInput(
       keycloakId = "kc-123",
       email = "john@example.com",
       firstName = "John",
       lastName = "Doe",
-      teamName = "backend"
+      team = "backend"
     )
 
     val teamId = UUID.fromString("33333333-3333-3333-3333-333333333333")
@@ -86,7 +86,17 @@ object UserServiceSuite extends SimpleIOSuite {
     for {
       user <- service.syncUser(input)
     } yield expect(observedTeamName.contains("backend")) and
-      expect(observedUpsert.contains(input -> teamId)) and
+      expect(
+        observedUpsert.contains(
+          UpsertUserInput(
+            keycloakId = input.keycloakId,
+            email = input.email,
+            firstName = input.firstName,
+            lastName = input.lastName,
+            teamName = input.team
+          ) -> teamId
+        )
+      ) and
       expect(user.teamId == teamId)
   }
 
