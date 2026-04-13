@@ -39,7 +39,10 @@ object RoutesSuite extends SimpleIOSuite {
       IO.raiseError(new IllegalStateException("not used"))
     def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
       IO.unit
-    def deleteTeamDatabaseGrant(teamId: java.util.UUID, databaseId: java.util.UUID) =
+    def deleteTeamDatabaseGrant(
+        teamId: java.util.UUID,
+        databaseId: java.util.UUID
+    ) =
       IO.unit
     def upsertUserDatabaseAccessExtension(
         request: UpsertUserDatabaseAccessExtensionRequest

@@ -116,10 +116,14 @@ object AccessServiceSuite extends SimpleIOSuite {
       access <- service.getEffectiveAccessForUser(user.id)
     } yield expect(access.map(_.databaseId) == List(databaseB.id)) and
       expect(access.headOption.exists(_.accessSource == "USER_EXTENSION")) and
-      expect(access.headOption.exists(_.extensionExpiresAt.contains(futureExpiry)))
+      expect(
+        access.headOption.exists(_.extensionExpiresAt.contains(futureExpiry))
+      )
   }
 
-  test("effective access merges team and extension sources for the same database") {
+  test(
+    "effective access merges team and extension sources for the same database"
+  ) {
     val service = makeAccessService(
       userRepository = stubUserRepository(foundUser = Some(user)),
       teamDatabaseGrantRepository =
@@ -133,8 +137,12 @@ object AccessServiceSuite extends SimpleIOSuite {
     for {
       access <- service.getEffectiveAccessForUser(user.id)
     } yield expect(access.size == 1) and
-      expect(access.headOption.exists(_.accessSource == "TEAM_AND_USER_EXTENSION")) and
-      expect(access.headOption.exists(_.extensionExpiresAt.contains(futureExpiry)))
+      expect(
+        access.headOption.exists(_.accessSource == "TEAM_AND_USER_EXTENSION")
+      ) and
+      expect(
+        access.headOption.exists(_.extensionExpiresAt.contains(futureExpiry))
+      )
   }
 
   test("effective access collapses duplicates by databaseId") {
@@ -178,9 +186,12 @@ object AccessServiceSuite extends SimpleIOSuite {
       expect(observedIds.contains(Set.empty))
   }
 
-  test("OTP issuance returns plaintext once, persists a SHA-256 hash, and invalidates older active OTPs") {
+  test(
+    "OTP issuance returns plaintext once, persists a SHA-256 hash, and invalidates older active OTPs"
+  ) {
     var invalidated: Option[(UUID, UUID)] = None
-    var observedCredentialInput: Option[CreateTemporaryAccessCredentialInput] = None
+    var observedCredentialInput: Option[CreateTemporaryAccessCredentialInput] =
+      None
     var eventOrder = Vector.empty[String]
     val service = makeAccessService(
       userRepository = stubUserRepository(foundUser = Some(user)),
@@ -240,7 +251,9 @@ object AccessServiceSuite extends SimpleIOSuite {
     ) and expect(!created)
   }
 
-  test("authenticated effective-access syncs the caller from token claims before resolving access") {
+  test(
+    "authenticated effective-access syncs the caller from token claims before resolving access"
+  ) {
     var observedSyncInputs = Vector.empty[AuthenticatedUserSyncInput]
     var eventOrder = Vector.empty[String]
 
@@ -273,7 +286,9 @@ object AccessServiceSuite extends SimpleIOSuite {
       expect(eventOrder == Vector("sync", "resolve-access"))
   }
 
-  test("OTP issuance syncs the caller from token claims before access checks and credential writes") {
+  test(
+    "OTP issuance syncs the caller from token claims before access checks and credential writes"
+  ) {
     var observedSyncInputs = Vector.empty[AuthenticatedUserSyncInput]
     var eventOrder = Vector.empty[String]
 
@@ -409,7 +424,8 @@ object AccessServiceSuite extends SimpleIOSuite {
     override val tableName = "databases"
     override val columns = Nil
 
-    private val databaseIndex = databases.map(database => database.id -> database).toMap
+    private val databaseIndex =
+      databases.map(database => database.id -> database).toMap
 
     def insert(input: CreateDatabase) =
       failConnection("insert should not be called")
@@ -423,7 +439,10 @@ object AccessServiceSuite extends SimpleIOSuite {
 
     def findByIds(ids: Set[UUID]) = {
       onFindByIds(ids)
-      databaseIndex.values.filter(database => ids.contains(database.id)).toList.pure[ConnectionIO]
+      databaseIndex.values
+        .filter(database => ids.contains(database.id))
+        .toList
+        .pure[ConnectionIO]
     }
   }
 

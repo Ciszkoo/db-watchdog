@@ -150,187 +150,193 @@ object AccessContractRepositoryIntegrationSuite
       }
   }
 
-  test("grant and extension lookup queries return the effective access inputs and delete removes them") {
-    db =>
-      withCleanDb(db) { db =>
-        val seeded = seedAccessGraph(db)
-        val futureExpiry = Instant.parse("2026-04-01T00:00:00Z")
-        val expiredAt = Instant.parse("2020-04-01T00:00:00Z")
+  test(
+    "grant and extension lookup queries return the effective access inputs and delete removes them"
+  ) { db =>
+    withCleanDb(db) { db =>
+      val seeded = seedAccessGraph(db)
+      val futureExpiry = Instant.parse("2026-04-01T00:00:00Z")
+      val expiredAt = Instant.parse("2020-04-01T00:00:00Z")
 
-        for {
-          ids <- seeded
-          secondDatabase <- db.transact(
-            databaseRepo.insert(
-              CreateDatabase(
-                engine = "postgres",
-                host = "db-secondary.local",
-                port = 5433,
-                technicalUser = "technical_secondary",
-                technicalPassword = "secret",
-                databaseName = "secondary"
-              )
+      for {
+        ids <- seeded
+        secondDatabase <- db.transact(
+          databaseRepo.insert(
+            CreateDatabase(
+              engine = "postgres",
+              host = "db-secondary.local",
+              port = 5433,
+              technicalUser = "technical_secondary",
+              technicalPassword = "secret",
+              databaseName = "secondary"
             )
           )
-          _ <- db.transact(
-            grantRepo.upsert(
-              UpsertTeamDatabaseGrantInput(ids.teamId, ids.databaseId)
-            )
+        )
+        _ <- db.transact(
+          grantRepo.upsert(
+            UpsertTeamDatabaseGrantInput(ids.teamId, ids.databaseId)
           )
-          _ <- db.transact(
-            extensionRepo.upsert(
-              UpsertUserDatabaseAccessExtensionInput(
-                ids.userId,
-                ids.databaseId,
-                Some(futureExpiry)
-              )
-            )
-          )
-          _ <- db.transact(
-            extensionRepo.upsert(
-              UpsertUserDatabaseAccessExtensionInput(
-                ids.userId,
-                secondDatabase.id,
-                Some(expiredAt)
-              )
-            )
-          )
-          grantedDatabaseIds <- db.transact(
-            grantRepo.findDatabaseIdsByTeamId(ids.teamId)
-          )
-          activeExtensions <- db.transact(
-            extensionRepo.findActiveByUserId(
+        )
+        _ <- db.transact(
+          extensionRepo.upsert(
+            UpsertUserDatabaseAccessExtensionInput(
               ids.userId,
-              Instant.parse("2026-03-01T00:00:00Z")
+              ids.databaseId,
+              Some(futureExpiry)
             )
           )
-          _ <- db.transact(
-            grantRepo.delete(ids.teamId, ids.databaseId)
+        )
+        _ <- db.transact(
+          extensionRepo.upsert(
+            UpsertUserDatabaseAccessExtensionInput(
+              ids.userId,
+              secondDatabase.id,
+              Some(expiredAt)
+            )
           )
-          _ <- db.transact(
-            extensionRepo.delete(ids.userId, ids.databaseId)
+        )
+        grantedDatabaseIds <- db.transact(
+          grantRepo.findDatabaseIdsByTeamId(ids.teamId)
+        )
+        activeExtensions <- db.transact(
+          extensionRepo.findActiveByUserId(
+            ids.userId,
+            Instant.parse("2026-03-01T00:00:00Z")
           )
-          remainingGrantCount <- db.transact(
-            sql"""
+        )
+        _ <- db.transact(
+          grantRepo.delete(ids.teamId, ids.databaseId)
+        )
+        _ <- db.transact(
+          extensionRepo.delete(ids.userId, ids.databaseId)
+        )
+        remainingGrantCount <- db.transact(
+          sql"""
               SELECT COUNT(*)
               FROM team_database_grants
               WHERE team_id = ${ids.teamId}
                 AND database_id = ${ids.databaseId}
             """.query[Int].unique
-          )
-          remainingExtensionCount <- db.transact(
-            sql"""
+        )
+        remainingExtensionCount <- db.transact(
+          sql"""
               SELECT COUNT(*)
               FROM user_database_access_extensions
               WHERE user_id = ${ids.userId}
                 AND database_id = ${ids.databaseId}
             """.query[Int].unique
-          )
-        } yield expect(grantedDatabaseIds == List(ids.databaseId)) and
-          expect(activeExtensions.map(_.databaseId) == List(ids.databaseId)) and
-          expect(remainingGrantCount == 0) and
-          expect(remainingExtensionCount == 0)
-      }
+        )
+      } yield expect(grantedDatabaseIds == List(ids.databaseId)) and
+        expect(activeExtensions.map(_.databaseId) == List(ids.databaseId)) and
+        expect(remainingGrantCount == 0) and
+        expect(remainingExtensionCount == 0)
+    }
   }
 
-  test("temporary credential invalidation marks only active credentials as used") {
-    db =>
-      withCleanDb(db) { db =>
-        val seeded = seedAccessGraph(db)
-        val now = Instant.parse("2026-05-01T00:10:00Z")
-        val activeExpiry = Instant.parse("2026-05-01T00:20:00Z")
-        val expiredAt = Instant.parse("2026-05-01T00:05:00Z")
-        val existingUsedAt = Instant.parse("2026-05-01T00:00:00Z")
+  test(
+    "temporary credential invalidation marks only active credentials as used"
+  ) { db =>
+    withCleanDb(db) { db =>
+      val seeded = seedAccessGraph(db)
+      val now = Instant.parse("2026-05-01T00:10:00Z")
+      val activeExpiry = Instant.parse("2026-05-01T00:20:00Z")
+      val expiredAt = Instant.parse("2026-05-01T00:05:00Z")
+      val existingUsedAt = Instant.parse("2026-05-01T00:00:00Z")
 
-        for {
-          ids <- seeded
-          sameDatabaseActiveOne <- db.transact(
-            credentialRepo.create(
-              CreateTemporaryAccessCredentialInput(
-                ids.userId,
-                ids.databaseId,
-                "hash-active-1",
-                activeExpiry
-              )
-            )
-          )
-          sameDatabaseActiveTwo <- db.transact(
-            credentialRepo.create(
-              CreateTemporaryAccessCredentialInput(
-                ids.userId,
-                ids.databaseId,
-                "hash-active-2",
-                activeExpiry
-              )
-            )
-          )
-          sameDatabaseExpired <- db.transact(
-            credentialRepo.create(
-              CreateTemporaryAccessCredentialInput(
-                ids.userId,
-                ids.databaseId,
-                "hash-expired",
-                expiredAt
-              )
-            )
-          )
-          sameDatabaseAlreadyUsed <- db.transact(
-            credentialRepo.create(
-              CreateTemporaryAccessCredentialInput(
-                ids.userId,
-                ids.databaseId,
-                "hash-used",
-                activeExpiry
-              )
-            )
-          )
-          _ <- db.transact(
-            credentialRepo.markUsed(sameDatabaseAlreadyUsed.id, existingUsedAt)
-          )
-          otherDatabase <- db.transact(
-            databaseRepo.insert(
-              CreateDatabase(
-                engine = "postgres",
-                host = "db-other.local",
-                port = 5434,
-                technicalUser = "technical_other",
-                technicalPassword = "secret",
-                databaseName = "other"
-              )
-            )
-          )
-          otherDatabaseCredential <- db.transact(
-            credentialRepo.create(
-              CreateTemporaryAccessCredentialInput(
-                ids.userId,
-                otherDatabase.id,
-                "hash-other-db",
-                activeExpiry
-              )
-            )
-          )
-          updatedCount <- db.transact(
-            credentialRepo.invalidateActiveForUserAndDatabase(
+      for {
+        ids <- seeded
+        sameDatabaseActiveOne <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
               ids.userId,
               ids.databaseId,
-              now
+              "hash-active-1",
+              activeExpiry
             )
           )
-          activeOneUsedAt <- db.transact(credentialUsedAt(sameDatabaseActiveOne.id))
-          activeTwoUsedAt <- db.transact(credentialUsedAt(sameDatabaseActiveTwo.id))
-          expiredUsedAt <- db.transact(credentialUsedAt(sameDatabaseExpired.id))
-          alreadyUsedAt <- db.transact(
-            credentialUsedAt(sameDatabaseAlreadyUsed.id)
+        )
+        sameDatabaseActiveTwo <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              ids.databaseId,
+              "hash-active-2",
+              activeExpiry
+            )
           )
-          otherDatabaseUsedAt <- db.transact(
-            credentialUsedAt(otherDatabaseCredential.id)
+        )
+        sameDatabaseExpired <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              ids.databaseId,
+              "hash-expired",
+              expiredAt
+            )
           )
-        } yield expect(updatedCount == 2) and
-          expect(activeOneUsedAt.nonEmpty) and
-          expect(activeTwoUsedAt.nonEmpty) and
-          expect(expiredUsedAt.isEmpty) and
-          expect(alreadyUsedAt.nonEmpty) and
-          expect(otherDatabaseUsedAt.isEmpty)
-      }
+        )
+        sameDatabaseAlreadyUsed <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              ids.databaseId,
+              "hash-used",
+              activeExpiry
+            )
+          )
+        )
+        _ <- db.transact(
+          credentialRepo.markUsed(sameDatabaseAlreadyUsed.id, existingUsedAt)
+        )
+        otherDatabase <- db.transact(
+          databaseRepo.insert(
+            CreateDatabase(
+              engine = "postgres",
+              host = "db-other.local",
+              port = 5434,
+              technicalUser = "technical_other",
+              technicalPassword = "secret",
+              databaseName = "other"
+            )
+          )
+        )
+        otherDatabaseCredential <- db.transact(
+          credentialRepo.create(
+            CreateTemporaryAccessCredentialInput(
+              ids.userId,
+              otherDatabase.id,
+              "hash-other-db",
+              activeExpiry
+            )
+          )
+        )
+        updatedCount <- db.transact(
+          credentialRepo.invalidateActiveForUserAndDatabase(
+            ids.userId,
+            ids.databaseId,
+            now
+          )
+        )
+        activeOneUsedAt <- db.transact(
+          credentialUsedAt(sameDatabaseActiveOne.id)
+        )
+        activeTwoUsedAt <- db.transact(
+          credentialUsedAt(sameDatabaseActiveTwo.id)
+        )
+        expiredUsedAt <- db.transact(credentialUsedAt(sameDatabaseExpired.id))
+        alreadyUsedAt <- db.transact(
+          credentialUsedAt(sameDatabaseAlreadyUsed.id)
+        )
+        otherDatabaseUsedAt <- db.transact(
+          credentialUsedAt(otherDatabaseCredential.id)
+        )
+      } yield expect(updatedCount == 2) and
+        expect(activeOneUsedAt.nonEmpty) and
+        expect(activeTwoUsedAt.nonEmpty) and
+        expect(expiredUsedAt.isEmpty) and
+        expect(alreadyUsedAt.nonEmpty) and
+        expect(otherDatabaseUsedAt.isEmpty)
+    }
   }
 
   private def seedAccessGraph(

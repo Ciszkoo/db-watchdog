@@ -11,14 +11,21 @@ import org.http4s.{Request, Status}
 import weaver.SimpleIOSuite
 
 import dbwatchdog.auth.AuthUser
-import dbwatchdog.domain.{DatabaseResponse, EffectiveDatabaseAccessResponse, IssueOtpResponse}
+import dbwatchdog.domain.{
+  DatabaseResponse,
+  EffectiveDatabaseAccessResponse,
+  IssueOtpResponse
+}
 import dbwatchdog.service.{AccessService, ServiceError}
 import dbwatchdog.support.AuthTestSupport
 
 object AccessRoutesSuite extends SimpleIOSuite {
-  private val databaseId = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd")
+  private val databaseId =
+    UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd")
 
-  test("GET /me/effective-access delegates to the access service with the authenticated user") {
+  test(
+    "GET /me/effective-access delegates to the access service with the authenticated user"
+  ) {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware(AuthTestSupport.regularAuthUser)
 
@@ -35,7 +42,9 @@ object AccessRoutesSuite extends SimpleIOSuite {
       expect(body.contains("TEAM"))
   }
 
-  test("POST /me/databases/{databaseId}/otp parses the UUID and returns the OTP without otpHash") {
+  test(
+    "POST /me/databases/{databaseId}/otp parses the UUID and returns the OTP without otpHash"
+  ) {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware(AuthTestSupport.regularAuthUser)
 
@@ -44,7 +53,12 @@ object AccessRoutesSuite extends SimpleIOSuite {
       response <- AccessRoutes
         .routes(recordingAccessService(issueOtpCalls = calls))
         .orNotFound
-        .run(Request[IO](Method.POST, uri"/me/databases/dddddddd-dddd-dddd-dddd-dddddddddddd/otp"))
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/me/databases/dddddddd-dddd-dddd-dddd-dddddddddddd/otp"
+          )
+        )
       observedCalls <- calls.get
       body <- response.as[String]
     } yield expect(response.status == Status.Ok) and
@@ -55,7 +69,9 @@ object AccessRoutesSuite extends SimpleIOSuite {
       expect(!body.contains("otpHash"))
   }
 
-  test("GET /admin/users/{userId}/effective-access delegates to the access service for DBA callers") {
+  test(
+    "GET /admin/users/{userId}/effective-access delegates to the access service for DBA callers"
+  ) {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
 
@@ -80,7 +96,9 @@ object AccessRoutesSuite extends SimpleIOSuite {
       expect(body.contains("TEAM"))
   }
 
-  test("GET /admin/users/{userId}/effective-access returns 403 for non-DBA callers") {
+  test(
+    "GET /admin/users/{userId}/effective-access returns 403 for non-DBA callers"
+  ) {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware(AuthTestSupport.regularAuthUser)
 
@@ -112,7 +130,9 @@ object AccessRoutesSuite extends SimpleIOSuite {
       adminResponse <- AccessRoutes
         .routes(recordingAccessService())
         .orNotFound
-        .run(Request[IO](Method.GET, uri"/admin/users/not-a-uuid/effective-access"))
+        .run(
+          Request[IO](Method.GET, uri"/admin/users/not-a-uuid/effective-access")
+        )
     } yield expect(otpResponse.status == Status.BadRequest) and
       expect(adminResponse.status == Status.BadRequest)
   }

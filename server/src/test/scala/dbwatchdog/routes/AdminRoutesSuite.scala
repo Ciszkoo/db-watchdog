@@ -43,7 +43,9 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(observedCalls == 0)
   }
 
-  test("DBA callers can create databases and responses do not expose technicalPassword") {
+  test(
+    "DBA callers can create databases and responses do not expose technicalPassword"
+  ) {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
 
@@ -62,7 +64,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
         .routes(recordingAdminService(createCalls = calls))
         .orNotFound
         .run(
-          Request[IO](Method.POST, uri"/admin/databases").withEntity(requestBody)
+          Request[IO](Method.POST, uri"/admin/databases")
+            .withEntity(requestBody)
         )
       body <- response.bodyText.compile.string
       observedCalls <- calls.get
