@@ -42,6 +42,10 @@ trait UserRepository extends TableFragment[UUID, User] {
       teamId: UUID
   ): ConnectionIO[User]
 
+  def list: ConnectionIO[List[User]]
+
+  def findById(id: UUID): ConnectionIO[Option[User]]
+
   def findByKeycloakId(keycloakId: String): ConnectionIO[User]
 }
 
@@ -109,6 +113,14 @@ object UserRepository {
         .query[User]
         .unique
     }
+
+    def list: ConnectionIO[List[User]] =
+      (selectF ++ fr"ORDER BY users.email ASC, users.id ASC")
+        .query[User]
+        .to[List]
+
+    def findById(id: UUID): ConnectionIO[Option[User]] =
+      (selectF ++ fr"WHERE users.id = $id").query[User].option
 
     def findByKeycloakId(keycloakId: String): ConnectionIO[User] =
       (selectF ++ fr"WHERE users.keycloak_id = $keycloakId")

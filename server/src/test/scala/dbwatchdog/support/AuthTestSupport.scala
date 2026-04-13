@@ -36,6 +36,9 @@ object AuthTestSupport {
     roles = Set("DBA", "user")
   )
 
+  val regularAuthUser: AuthUser =
+    authUser.copy(roles = Set("user"))
+
   val persistedUser: User = User(
     id = UUID.fromString("11111111-1111-1111-1111-111111111111"),
     keycloakId = authUser.sub,

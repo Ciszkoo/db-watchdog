@@ -16,6 +16,8 @@ trait TeamRepository extends TableFragment[UUID, Team] {
   val columns: List[String] = List("id", "name", "created_at", "updated_at")
 
   def create(name: String): ConnectionIO[Team]
+  def list: ConnectionIO[List[Team]]
+  def findById(id: UUID): ConnectionIO[Option[Team]]
   def findByName(name: String): ConnectionIO[Option[Team]]
   def findOrCreate(name: String): ConnectionIO[Team]
 }
@@ -27,6 +29,12 @@ object TeamRepository {
     def create(name: String): ConnectionIO[Team] =
       (fr"INSERT INTO" ++ tableF ++ fr"(name) VALUES ($name)"
         ++ returningF).query[Team].unique
+
+    def list: ConnectionIO[List[Team]] =
+      (selectF ++ fr"ORDER BY name ASC").query[Team].to[List]
+
+    def findById(id: UUID): ConnectionIO[Option[Team]] =
+      (selectF ++ fr"WHERE id = $id").query[Team].option
 
     def findByName(name: String): ConnectionIO[Option[Team]] =
       (selectF ++ fr"WHERE name = $name").query[Team].option

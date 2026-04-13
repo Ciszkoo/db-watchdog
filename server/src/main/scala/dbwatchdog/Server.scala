@@ -18,7 +18,9 @@ object Server {
     given AuthMiddleware[IO, AuthUser] = JwtAuth.middleware(config.keycloak)
 
     val routes = Routes.all(
-      userService = services.users
+      userService = services.users,
+      adminService = services.admin,
+      accessService = services.access
     )
     val corsRoutes = CORS.policy.withAllowOriginAll(routes)
     val httpApp = corsRoutes.orNotFound

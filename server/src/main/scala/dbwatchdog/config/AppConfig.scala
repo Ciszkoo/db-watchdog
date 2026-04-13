@@ -6,7 +6,8 @@ import pureconfig.{ConfigReader, ConfigSource}
 case class AppConfig(
     server: AppConfig.ServerConfig,
     db: AppConfig.DatabaseConfig,
-    keycloak: AppConfig.KeycloakConfig
+    keycloak: AppConfig.KeycloakConfig,
+    otp: AppConfig.OtpConfig
 ) derives ConfigReader
 
 object AppConfig {
@@ -37,5 +38,10 @@ object AppConfig {
       audience: String,
       authorizedParty: String,
       clockSkewSeconds: Long = 30
+  )
+
+  case class OtpConfig(
+      ttlSeconds: Long,
+      randomBytes: Int
   )
 }
