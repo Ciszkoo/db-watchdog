@@ -528,6 +528,43 @@ describe("admin routes", () => {
     )
   })
 
+  it("disables admin access mutations when prerequisite records are unavailable", async () => {
+    listDatabasesMock.mockResolvedValueOnce([])
+    listTeamGrantsMock.mockResolvedValueOnce([])
+    listExtensionsMock.mockResolvedValueOnce([])
+    getEffectiveAccessForUserMock.mockResolvedValueOnce([
+      {
+        databaseId: databaseA.id,
+        engine: databaseA.engine,
+        host: databaseA.host,
+        port: databaseA.port,
+        databaseName: databaseA.databaseName,
+        loginIdentifier: userA.email,
+        accessSource: "TEAM",
+        extensionExpiresAt: null,
+      },
+    ])
+
+    renderApp("/admin/access")
+
+    expect(
+      await screen.findByText("Grant setup needs a team and a database")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("Extension setup needs a user and a database")
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole("button", { name: "Add team grant" })
+    ).toBeDisabled()
+    expect(
+      screen.getByRole("button", { name: "Add or update extension" })
+    ).toBeDisabled()
+
+    expect(upsertTeamGrantMock).not.toHaveBeenCalled()
+    expect(upsertExtensionMock).not.toHaveBeenCalled()
+  })
+
   it("renders a populated session review table", async () => {
     renderApp("/admin/sessions")
 

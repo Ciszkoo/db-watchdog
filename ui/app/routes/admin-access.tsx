@@ -165,6 +165,8 @@ export default function AdminAccessPage() {
   const userById = new Map(state.users.map(user => [user.id, user]))
   const databaseById = new Map(state.databases.map(database => [database.id, database]))
   const selectedUser = userById.get(selectedUserId)
+  const canSubmitGrant = Boolean(grantForm.teamId && grantForm.databaseId)
+  const canSubmitExtension = Boolean(extensionForm.userId && extensionForm.databaseId)
 
   const maybeRefreshPreviewForGrant = useCallback(
     async (teamId: string) => {
@@ -345,11 +347,24 @@ export default function AdminAccessPage() {
                   }
                 />
                 <div className="flex items-end">
-                  <Button type="submit" disabled={isSubmittingGrant}>
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingGrant || !canSubmitGrant}
+                  >
                     {isSubmittingGrant ? "Saving..." : "Add team grant"}
                   </Button>
                 </div>
               </form>
+
+              {!canSubmitGrant ? (
+                <Alert>
+                  <AlertTitle>Grant setup needs a team and a database</AlertTitle>
+                  <AlertDescription>
+                    Load at least one team and one registered database before saving a
+                    team grant.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
               {!state.grants.length ? (
                 <Alert>
@@ -461,11 +476,24 @@ export default function AdminAccessPage() {
                   }
                 />
                 <div className="flex items-end">
-                  <Button type="submit" disabled={isSubmittingExtension}>
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingExtension || !canSubmitExtension}
+                  >
                     {isSubmittingExtension ? "Saving..." : "Add or update extension"}
                   </Button>
                 </div>
               </form>
+
+              {!canSubmitExtension ? (
+                <Alert>
+                  <AlertTitle>Extension setup needs a user and a database</AlertTitle>
+                  <AlertDescription>
+                    Load at least one user and one registered database before saving a
+                    user extension.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
               {!state.extensions.length ? (
                 <Alert>
