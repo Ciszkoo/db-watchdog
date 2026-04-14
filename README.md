@@ -150,7 +150,7 @@ make proxy-run
 ```
 
 It accepts PostgreSQL client connections on local TCP port `5432`, validates OTPs directly against the system database, resolves the backend target from the registered `databases` row, and records session lifecycle rows in `database_sessions`.
-The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+The default `proxy-run` target injects `certs/proxy.crt` and `certs/proxy.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
 The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
 
 ```bash
@@ -164,6 +164,8 @@ For local smoke tests, the PostgreSQL login shape through the proxy is:
 - `dbname=<registered databaseName>`
 
 If a database has been deactivated, previously issued but unused OTPs for that database no longer authenticate through the proxy and still surface as the same generic authentication failure.
+
+A repeatable live-stack lifecycle smoke test is available at [scripts/smoke_database_lifecycle.sh](/home/ciszko/Code/db-watchdog/scripts/smoke_database_lifecycle.sh). It brings up local dependencies if needed, exercises Keycloak -> backend -> proxy -> PostgreSQL, and verifies that deactivate/reactivate changes effective access, OTP issuance, and proxy login behavior end to end.
 
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
