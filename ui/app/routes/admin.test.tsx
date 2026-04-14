@@ -405,6 +405,8 @@ describe("admin routes", () => {
   })
 
   it("refreshes extensions and the selected-user preview after extension mutations", async () => {
+    const submittedExpiresAt = new Date("2026-02-02T09:30").toISOString()
+
     listExtensionsMock
       .mockResolvedValueOnce([
         {
@@ -499,7 +501,7 @@ describe("admin routes", () => {
       expect(upsertExtensionMock).toHaveBeenCalledWith({
         userId: userA.id,
         databaseId: databaseA.id,
-        expiresAt: "2026-02-02T08:30:00.000Z",
+        expiresAt: submittedExpiresAt,
       })
     )
 
