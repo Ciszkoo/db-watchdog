@@ -37,7 +37,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
     for {
       calls <- Ref.of[IO, Int](0)
       response <- AdminRoutes
-        .routes(recordingAdminService(calls))
+        .routes(recordingAdminService(sessionCalls = calls))
         .orNotFound
         .run(Request[IO](Method.GET, uri"/admin/sessions"))
       observedCalls <- calls.get
@@ -189,6 +189,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
 
   private def recordingAdminService(
       teamCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
+      sessionCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       createCalls: Ref[IO, Vector[CreateDatabaseRequest]] =
         Ref.unsafe[IO, Vector[CreateDatabaseRequest]](Vector.empty)
   ): AdminService = new AdminService {
@@ -207,7 +208,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
 
     def listSessions() =
-      IO.pure(
+      sessionCalls.update(_ + 1) *> IO.pure(
         List(
           AdminDatabaseSessionResponse(
             id = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd"),

@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const defaultSystemDBDSN = "postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable&search_path=db_watchdog,public"
+const defaultSystemDBDSN = "postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(
@@ -151,6 +151,19 @@ func handleConnection(
 		return
 	}
 
+	var stats tunnel.Stats
+	defer func() {
+		if err := store.EndSession(
+			ctx,
+			sessionID,
+			time.Now().UTC(),
+			stats.BytesSent,
+			stats.BytesRecv,
+		); err != nil {
+			slog.Warn("failed to mark session ended", "session_id", sessionID, "err", err)
+		}
+	}()
+
 	// Inform client on success
 	if err := postgres.SendAuthOk(result.Conn); err != nil {
 		return
@@ -165,17 +178,7 @@ func handleConnection(
 	}
 
 	// Open pipe
-	stats := tunnel.Pipe(result.Conn, backendConn)
-
-	if err := store.EndSession(
-		ctx,
-		sessionID,
-		time.Now().UTC(),
-		stats.BytesSent,
-		stats.BytesRecv,
-	); err != nil {
-		slog.Warn("failed to mark session ended", "session_id", sessionID, "err", err)
-	}
+	stats = tunnel.Pipe(result.Conn, backendConn)
 
 	slog.Info("session ended", "session_id", sessionID, "user", result.User, "bytes_sent", stats.BytesSent, "bytes_received", stats.BytesRecv)
 }

@@ -115,7 +115,7 @@ The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`
 The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
 
 ```bash
-postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable&search_path=db_watchdog,public
+postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable
 ```
 
 For local smoke tests, the PostgreSQL login shape through the proxy is:

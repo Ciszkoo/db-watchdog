@@ -16,10 +16,10 @@ import (
 var ErrAuthenticationFailed = errors.New("authentication failed")
 
 const consumeOTPQuery = `
-UPDATE temporary_access_credentials AS tac
+UPDATE db_watchdog.temporary_access_credentials AS tac
 SET used_at = NOW(),
     updated_at = NOW()
-FROM users AS u, databases AS d
+FROM db_watchdog.users AS u, db_watchdog.databases AS d
 WHERE tac.user_id = u.id
   AND tac.database_id = d.id
   AND tac.otp_hash = $1
@@ -32,13 +32,13 @@ RETURNING tac.id, tac.user_id, tac.database_id, d.host, d.port, d.database_name,
 `
 
 const startSessionQuery = `
-INSERT INTO database_sessions (user_id, database_id, credential_id, client_addr, started_at)
+INSERT INTO db_watchdog.database_sessions (user_id, database_id, credential_id, client_addr, started_at)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id
 `
 
 const endSessionQuery = `
-UPDATE database_sessions
+UPDATE db_watchdog.database_sessions
 SET ended_at = $2,
     bytes_sent = $3,
     bytes_received = $4,
