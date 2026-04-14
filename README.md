@@ -99,6 +99,15 @@ Default frontend-related config:
 
 - Keycloak URL: `http://localhost:8180`
 - API base URL: `http://localhost:8080/api/v1`
+- Proxy host shown in OTP instructions: `localhost`
+- Proxy port shown in OTP instructions: `5432`
+
+The frontend dashboard at `/` now lists the authenticated user’s effective database access, allows per-database OTP generation, and shows the exact proxy login parameters needed for manual connection:
+
+- `host=<VITE_PROXY_HOST or localhost>`
+- `port=<VITE_PROXY_PORT or 5432>`
+- `user=<loginIdentifier>`
+- `database=<registered databaseName>`
 
 During startup the UI authenticates through Keycloak and then calls `POST /users/me/sync` without sending identity fields in the request body.
 
@@ -145,6 +154,7 @@ make server-compile
 ```bash
 make ui-lint
 make ui-typecheck
+make ui-test
 make ui-build
 ```
 
@@ -186,6 +196,7 @@ The backend creates and invalidates OTP credentials in these tables, the reverse
 
 The repository now has a dedicated reverse-proxy GitHub Actions workflow at [.github/workflows/reverse-proxy-ci.yml](/home/ciszko/Code/db-watchdog/.github/workflows/reverse-proxy-ci.yml).
 It runs `go test ./...` and `go build ./...` for `reverse-proxy/**` changes without coupling the Go checks to the Scala workflow.
+The frontend now also has a dedicated workflow at [.github/workflows/ui-ci.yml](/home/ciszko/Code/db-watchdog/.github/workflows/ui-ci.yml), which runs `make ui-lint`, `make ui-typecheck`, `make ui-test`, and `make ui-build` for relevant UI changes.
 
 ## Local Keycloak Contract
 
