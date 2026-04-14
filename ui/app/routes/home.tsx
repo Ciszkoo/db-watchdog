@@ -49,7 +49,7 @@ const ACCESS_SOURCE_META: Record<
 }
 
 export default function Home() {
-  const { isAuthenticated, isLoading, user } = useAuth()
+  const { authError, isAuthenticated, isLoading, login, user } = useAuth()
   const [access, setAccess] = useState<EffectiveDatabaseAccess[]>([])
   const [isFetchingAccess, setIsFetchingAccess] = useState(false)
   const [hasLoadedAccess, setHasLoadedAccess] = useState(false)
@@ -112,6 +112,15 @@ export default function Home() {
     const composedName = `${user.firstName} ${user.lastName}`.trim()
     return composedName || user.preferredUsername || user.email
   }, [user])
+
+  if (authError) {
+    return (
+      <AuthenticationErrorState
+        message={authError}
+        onLogin={login}
+      />
+    )
+  }
 
   if (
     isLoading ||
@@ -330,6 +339,36 @@ function AccessErrorState({
             <Button onClick={() => void onRetry()} disabled={isRetrying}>
               {isRetrying ? "Retrying..." : "Retry"}
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  )
+}
+
+function AuthenticationErrorState({
+  message,
+  onLogin,
+}: {
+  message: string
+  onLogin: () => Promise<void>
+}) {
+  return (
+    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
+      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Authentication is required</CardTitle>
+            <CardDescription>
+              The application couldn&apos;t finish the authentication bootstrap.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert variant="destructive">
+              <AlertTitle>Sign-in flow needs to be restarted</AlertTitle>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+            <Button onClick={() => void onLogin()}>Sign in again</Button>
           </CardContent>
         </Card>
       </div>
@@ -564,6 +603,14 @@ function ConnectionRow({ label, value }: { label: string; value: string }) {
 
 function mapOtpError(error: unknown): OtpError {
   const status = axios.isAxiosError(error) ? error.response?.status : undefined
+
+  if (status === 401) {
+    return {
+      kind: "retryable",
+      title: "Session expired",
+      message: "Your session has expired. You will need to sign in again.",
+    }
+  }
 
   if (status === 403) {
     return {

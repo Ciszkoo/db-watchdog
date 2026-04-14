@@ -20,6 +20,7 @@ import { AuthContext } from "./AuthContext"
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [user, setUser] = useState<UserInfo | null>(null)
 
   const syncUserWithBackend = useCallback(async () => {
@@ -30,17 +31,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const login = useCallback(async () => {
+    setAuthError(null)
+    await getKeycloak().login()
+  }, [])
+
+  const handleUnauthorized = useCallback(() => {
+    setAuthError(null)
+    setUser(null)
+    setIsAuthenticated(false)
+    void login()
+  }, [login])
+
   useEffect(() => {
     const init = async () => {
       try {
         const userInfo = await initKeycloak()
 
         if (!userInfo) {
-          getKeycloak().login()
+          await login()
           return
         }
 
-        setAuthInterceptor(getToken, () => updateToken(30))
+        setAuthInterceptor(getToken, () => updateToken(30), handleUnauthorized)
+        setAuthError(null)
         setIsAuthenticated(true)
         setUser(userInfo)
         await syncUserWithBackend()
@@ -51,14 +65,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         console.error("Auth initialization failed:", error)
+        setAuthError("Authentication couldn't be initialized. Try signing in again.")
         setIsAuthenticated(false)
+        setUser(null)
       } finally {
         setIsLoading(false)
       }
     }
 
     init()
-  }, [syncUserWithBackend])
+  }, [handleUnauthorized, login, syncUserWithBackend])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -76,14 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        isLoading,
-        user,
-        token: getKeycloak().token,
-        logout,
-        refreshToken,
-      }}
+        value={{
+          isAuthenticated,
+          isLoading,
+          authError,
+          user,
+          token: getKeycloak().token,
+          login,
+          logout,
+          refreshToken,
+        }}
     >
       {children}
     </AuthContext.Provider>

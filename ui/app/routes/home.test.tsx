@@ -20,6 +20,7 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 const defaultAuthContext: AuthContextType = {
   isAuthenticated: true,
   isLoading: false,
+  authError: null,
   user: {
     sub: "user-1",
     email: "alex@example.com",
@@ -30,6 +31,7 @@ const defaultAuthContext: AuthContextType = {
     team: "Platform",
   },
   token: "token",
+  login: vi.fn().mockResolvedValue(undefined),
   logout: vi.fn(),
   refreshToken: vi.fn().mockResolvedValue(true),
 }
@@ -146,6 +148,24 @@ describe("home dashboard", () => {
 
     await waitFor(() => expect(listEffectiveAccessMock).toHaveBeenCalledTimes(2))
     expect(await screen.findByText("No databases available")).toBeInTheDocument()
+  })
+
+  it("renders an auth recovery state instead of infinite loading after auth bootstrap failure", async () => {
+    const login = vi.fn().mockResolvedValue(undefined)
+
+    renderHome({
+      isAuthenticated: false,
+      isLoading: false,
+      authError: "Authentication couldn't be initialized. Try signing in again.",
+      user: null,
+      login,
+    })
+
+    expect(await screen.findByText("Authentication is required")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }))
+
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1))
   })
 })
 
