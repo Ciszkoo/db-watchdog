@@ -64,8 +64,10 @@ The backend now also exposes:
 - `GET /api/v1/admin/sessions`
 - `GET /api/v1/admin/databases`
 - `POST /api/v1/admin/databases`
+- `GET /api/v1/admin/team-database-grants`
 - `PUT /api/v1/admin/team-database-grants`
 - `DELETE /api/v1/admin/team-database-grants/{teamId}/{databaseId}`
+- `GET /api/v1/admin/user-database-access-extensions`
 - `PUT /api/v1/admin/user-database-access-extensions`
 - `DELETE /api/v1/admin/user-database-access-extensions/{userId}/{databaseId}`
 - `GET /api/v1/admin/users/{userId}/effective-access`
@@ -110,6 +112,26 @@ The frontend dashboard at `/` now lists the authenticated user’s effective dat
 - `database=<registered databaseName>`
 
 During startup the UI authenticates through Keycloak and then calls `POST /users/me/sync` without sending identity fields in the request body.
+
+The UI is now role-aware from Keycloak token claims:
+
+- every authenticated user sees `My Access` at `/`
+- a user with the `DBA` realm role also sees:
+  - `/admin/databases`
+  - `/admin/access`
+  - `/admin/sessions`
+
+From the admin UI, a `DBA` can now:
+
+- register databases from the browser
+- review current team-to-database grants
+- add and remove team grants
+- review current per-user access extensions
+- add, update, and remove user extensions
+- preview one selected user’s effective access
+- review recorded proxy sessions
+
+Non-`DBA` users who navigate directly to `/admin/*` now get an explicit in-app access-denied screen instead of a silent redirect.
 
 ### Reverse Proxy
 
@@ -210,7 +232,8 @@ The frontend development client includes a backend audience mapper so the backen
 
 ## Current State
 
-- The backend has a validated auth boundary, token-derived user sync, administrative access APIs, effective-access resolution, OTP issuance, and admin session review.
+- The backend has a validated auth boundary, token-derived user sync, administrative access APIs, read/write access-state management, effective-access resolution, OTP issuance, and admin session review.
 - The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, and records session start/end metadata.
-- Database edit/delete flows and technical credential hardening remain deferred.
+- The frontend now includes both the end-user OTP workflow and the first operable `DBA` admin console.
+- Database edit/delete flows, technical credential hardening, session filtering/pagination, and Playwright end-to-end coverage remain deferred.
 - The repository includes local certificates under `certs/` for development use.

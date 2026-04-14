@@ -10,6 +10,8 @@ import doobie.ConnectionIO
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
   AdminDatabaseSessionResponse,
+  AdminTeamDatabaseGrantResponse,
+  AdminUserDatabaseAccessExtensionResponse,
   AdminUserResponse,
   CreateDatabase,
   CreateDatabaseRequest,
@@ -29,6 +31,9 @@ trait AdminService {
   def listUsers(): IO[List[AdminUserResponse]]
   def listSessions(): IO[List[AdminDatabaseSessionResponse]]
   def listDatabases(): IO[List[DatabaseResponse]]
+  def listTeamDatabaseGrants(): IO[List[AdminTeamDatabaseGrantResponse]]
+  def listUserDatabaseAccessExtensions()
+      : IO[List[AdminUserDatabaseAccessExtensionResponse]]
   def createDatabase(request: CreateDatabaseRequest): IO[DatabaseResponse]
   def upsertTeamDatabaseGrant(
       request: UpsertTeamDatabaseGrantRequest
@@ -130,6 +135,21 @@ object AdminService {
       def listDatabases(): IO[List[DatabaseResponse]] =
         db.transact(
           repos.databases.list.map(_.map(DatabaseResponse.fromDomain))
+        )
+
+      def listTeamDatabaseGrants(): IO[List[AdminTeamDatabaseGrantResponse]] =
+        db.transact(
+          repos.teamDatabaseGrants.list.map(
+            _.map(AdminTeamDatabaseGrantResponse.fromDomain)
+          )
+        )
+
+      def listUserDatabaseAccessExtensions()
+          : IO[List[AdminUserDatabaseAccessExtensionResponse]] =
+        db.transact(
+          repos.userDatabaseAccessExtensions.list.map(
+            _.map(AdminUserDatabaseAccessExtensionResponse.fromDomain)
+          )
         )
 
       def createDatabase(

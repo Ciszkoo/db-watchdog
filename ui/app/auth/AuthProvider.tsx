@@ -95,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         value={{
           isAuthenticated,
           isLoading,
+          isDba: user?.isDba ?? false,
           authError,
           user,
           token: getKeycloak().token,

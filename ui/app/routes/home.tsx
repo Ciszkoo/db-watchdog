@@ -1,7 +1,8 @@
 import axios from "axios"
 import { useCallback, useEffect, useMemo, useState } from "react"
 
-import { accessApi, type EffectiveDatabaseAccess, type IssuedOtp } from "~/api/accessApi"
+import { accessApi, type IssuedOtp } from "~/api/accessApi"
+import type { EffectiveDatabaseAccess } from "~/api/types"
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
@@ -17,6 +18,7 @@ import { Separator } from "~/components/ui/separator"
 import { Skeleton } from "~/components/ui/skeleton"
 import { useAuth } from "~/auth/AuthContext"
 import { config } from "~/config"
+import { ACCESS_SOURCE_META } from "~/lib/accessSource"
 
 type OtpError = {
   kind: "forbidden" | "missing" | "retryable"
@@ -30,26 +32,8 @@ type OtpCardState =
   | { status: "success"; issuedOtp: IssuedOtp }
   | { status: "error"; error: OtpError }
 
-const ACCESS_SOURCE_META: Record<
-  string,
-  { label: string; variant: "default" | "secondary" | "outline" }
-> = {
-  TEAM: {
-    label: "Team grant",
-    variant: "secondary",
-  },
-  USER_EXTENSION: {
-    label: "User extension",
-    variant: "outline",
-  },
-  TEAM_AND_USER_EXTENSION: {
-    label: "Team grant + extension",
-    variant: "default",
-  },
-}
-
 export default function Home() {
-  const { authError, isAuthenticated, isLoading, login, user } = useAuth()
+  const { user } = useAuth()
   const [access, setAccess] = useState<EffectiveDatabaseAccess[]>([])
   const [isFetchingAccess, setIsFetchingAccess] = useState(false)
   const [hasLoadedAccess, setHasLoadedAccess] = useState(false)
@@ -83,26 +67,13 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (
-      isLoading ||
-      !isAuthenticated ||
-      !user ||
-      hasRequestedAccess ||
-      isFetchingAccess
-    ) {
+    if (!user || hasRequestedAccess || isFetchingAccess) {
       return
     }
 
     setHasRequestedAccess(true)
     void loadAccess()
-  }, [
-    hasRequestedAccess,
-    isAuthenticated,
-    isFetchingAccess,
-    isLoading,
-    loadAccess,
-    user,
-  ])
+  }, [hasRequestedAccess, isFetchingAccess, loadAccess, user])
 
   const fullName = useMemo(() => {
     if (!user) {
@@ -113,21 +84,7 @@ export default function Home() {
     return composedName || user.preferredUsername || user.email
   }, [user])
 
-  if (authError) {
-    return (
-      <AuthenticationErrorState
-        message={authError}
-        onLogin={login}
-      />
-    )
-  }
-
-  if (
-    isLoading ||
-    !isAuthenticated ||
-    !user ||
-    (!hasLoadedAccess && (!hasRequestedAccess || isFetchingAccess) && !routeError)
-  ) {
+  if (!user || (!hasLoadedAccess && (!hasRequestedAccess || isFetchingAccess) && !routeError)) {
     return <LoadingDashboard />
   }
 
@@ -148,8 +105,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <main className="grid gap-6">
+      <div className="flex max-w-6xl flex-col gap-6">
         <DashboardIntro
           fullName={fullName}
           email={user.email}
@@ -277,8 +234,8 @@ function EmptyAccessState({
   isRefreshing: boolean
 }) {
   return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto flex max-w-4xl flex-col gap-6">
+    <main className="grid gap-6">
+      <div className="flex max-w-4xl flex-col gap-6">
         <DashboardIntro
           fullName={fullName}
           email={email}
@@ -319,8 +276,8 @@ function AccessErrorState({
   isRetrying: boolean
 }) {
   return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <main className="grid gap-6">
+      <div className="flex max-w-3xl flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Database access is temporarily unavailable</CardTitle>
@@ -346,40 +303,10 @@ function AccessErrorState({
   )
 }
 
-function AuthenticationErrorState({
-  message,
-  onLogin,
-}: {
-  message: string
-  onLogin: () => Promise<void>
-}) {
-  return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Authentication is required</CardTitle>
-            <CardDescription>
-              The application couldn&apos;t finish the authentication bootstrap.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert variant="destructive">
-              <AlertTitle>Sign-in flow needs to be restarted</AlertTitle>
-              <AlertDescription>{message}</AlertDescription>
-            </Alert>
-            <Button onClick={() => void onLogin()}>Sign in again</Button>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
-  )
-}
-
 function LoadingDashboard() {
   return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 lg:px-10">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <main className="grid gap-6">
+      <div className="flex max-w-6xl flex-col gap-6">
         <Card className="overflow-hidden">
           <CardContent className="space-y-5 p-6 sm:p-8">
             <div className="space-y-3">

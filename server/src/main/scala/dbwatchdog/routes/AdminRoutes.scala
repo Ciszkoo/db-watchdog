@@ -50,6 +50,24 @@ object AdminRoutes {
           }
         }
 
+      case GET -> Root / "admin" / "team-database-grants" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            adminService
+              .listTeamDatabaseGrants()
+              .flatMap(grants => Ok(grants.asJson))
+          }
+        }
+
+      case GET -> Root / "admin" / "user-database-access-extensions" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            adminService
+              .listUserDatabaseAccessExtensions()
+              .flatMap(extensions => Ok(extensions.asJson))
+          }
+        }
+
       case request @ POST -> Root / "admin" / "databases" as authUser =>
         dbaOnly(authUser) {
           handleServiceErrors {

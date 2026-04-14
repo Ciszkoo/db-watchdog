@@ -21,6 +21,7 @@ import dbwatchdog.domain.{
   CreateTemporaryAccessCredentialInput,
   Database as PersistedDatabase,
   Team,
+  TeamDatabaseGrant,
   TemporaryAccessCredential,
   UpsertTeamDatabaseGrantInput,
   UpsertUserDatabaseAccessExtensionInput,
@@ -455,6 +456,8 @@ object AccessServiceSuite extends SimpleIOSuite {
     def upsert(input: UpsertTeamDatabaseGrantInput) =
       failConnection("upsert should not be called")
 
+    def list = List.empty[TeamDatabaseGrant].pure[ConnectionIO]
+
     def delete(teamId: UUID, databaseId: UUID) =
       failConnection("delete should not be called")
 
@@ -471,6 +474,8 @@ object AccessServiceSuite extends SimpleIOSuite {
 
       def upsert(input: UpsertUserDatabaseAccessExtensionInput) =
         failConnection("upsert should not be called")
+
+      def list = extensions.pure[ConnectionIO]
 
       def delete(userId: UUID, databaseId: UUID) =
         failConnection("delete should not be called")
