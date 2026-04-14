@@ -4,8 +4,10 @@ import type { UserInfo } from "./keycloak"
 export interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
+  authError: string | null
   user: UserInfo | null
   token: string | undefined
+  login: () => Promise<void>
   logout: () => void
   refreshToken: () => Promise<boolean>
 }

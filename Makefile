@@ -20,7 +20,7 @@ PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/server.key
 	bootstrap proxy-deps server-deps ui-install \
 	proxy-run proxy-test proxy-build proxy-check \
 	server-run server-scalafix server-format server-format-check server-test server-it-test server-coverage server-compile server-check \
-	ui-dev ui-start ui-lint ui-lint-fix ui-typecheck ui-build ui-check \
+	ui-dev ui-start ui-lint ui-lint-fix ui-typecheck ui-test ui-build ui-check \
 	build check
 
 help: ## Show available root targets.
@@ -98,10 +98,13 @@ ui-lint-fix: require-pnpm ## Apply frontend lint fixes.
 ui-typecheck: require-pnpm ## Run frontend type generation and TypeScript checks.
 	cd "$(UI_DIR)" && $(PNPM) typecheck
 
+ui-test: require-pnpm ## Run frontend UI tests.
+	cd "$(UI_DIR)" && $(PNPM) test
+
 ui-build: require-pnpm ## Build the frontend.
 	cd "$(UI_DIR)" && $(PNPM) build
 
-ui-check: ui-lint ui-typecheck ui-build ## Validate the frontend module.
+ui-check: ui-lint ui-typecheck ui-test ui-build ## Validate the frontend module.
 
 build: proxy-build server-compile ui-build ## Build every application module.
 
