@@ -20,12 +20,17 @@ object Routes {
       accessService: AccessService
   )(using
       authMiddleware: AuthMiddleware[IO, AuthUser]
-  ): HttpRoutes[IO] = Router(
-    "/api/v1" -> (
-      HealthService.routes <+>
-        UserRoutes.routes(userService) <+>
-        AdminRoutes.routes(adminService) <+>
-        AccessRoutes.routes(accessService)
+  ): HttpRoutes[IO] = {
+    val authedRoutes =
+      UserRoutes.authedRoutes(userService) <+>
+        AdminRoutes.authedRoutes(adminService) <+>
+        AccessRoutes.authedRoutes(accessService)
+
+    Router(
+      "/api/v1" -> (
+        HealthService.routes <+>
+          authMiddleware(authedRoutes)
+      )
     )
-  )
+  }
 }

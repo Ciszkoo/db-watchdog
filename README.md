@@ -61,6 +61,7 @@ The backend now also exposes:
 
 - `GET /api/v1/admin/teams`
 - `GET /api/v1/admin/users`
+- `GET /api/v1/admin/sessions`
 - `GET /api/v1/admin/databases`
 - `POST /api/v1/admin/databases`
 - `PUT /api/v1/admin/team-database-grants`
@@ -72,7 +73,7 @@ The backend now also exposes:
 - `POST /api/v1/me/databases/{databaseId}/otp`
 
 Database responses never expose `technicalPassword`.
-The backend now issues short-lived OTPs backed by stored SHA-256 hashes, but proxy-side OTP verification is still pending.
+The backend now issues short-lived OTPs backed by stored SHA-256 hashes, and `GET /api/v1/admin/sessions` exposes the recorded proxy sessions for `DBA` review.
 
 Backend tests are split into unit and integration suites:
 
@@ -109,8 +110,20 @@ The reverse proxy is a Go module.
 make proxy-run
 ```
 
-It currently accepts PostgreSQL client connections on local TCP port `5432` and connects to the external PostgreSQL instance on `localhost:54321`.
+It accepts PostgreSQL client connections on local TCP port `5432`, validates OTPs directly against the system database, resolves the backend target from the registered `databases` row, and records session lifecycle rows in `database_sessions`.
 The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
+
+```bash
+postgres://postgres:password@localhost:54320/db_watchdog?sslmode=disable
+```
+
+For local smoke tests, the PostgreSQL login shape through the proxy is:
+
+- `user=<user email>`
+- `password=<issued otp>`
+- `dbname=<registered databaseName>`
+
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
 ## Validation
@@ -167,7 +180,12 @@ The backend now persists the shared contract that later proxy work will read and
 - `temporary_access_credentials`
 - `database_sessions`
 
-At this stage the backend now creates and invalidates OTP credentials in these tables, but proxy-side verification and session review APIs are still implemented in later PRs.
+The backend creates and invalidates OTP credentials in these tables, the reverse proxy consumes them directly at connection time, and successful sessions are now written back for admin review.
+
+## CI
+
+The repository now has a dedicated reverse-proxy GitHub Actions workflow at [.github/workflows/reverse-proxy-ci.yml](/home/ciszko/Code/db-watchdog/.github/workflows/reverse-proxy-ci.yml).
+It runs `go test ./...` and `go build ./...` for `reverse-proxy/**` changes without coupling the Go checks to the Scala workflow.
 
 ## Local Keycloak Contract
 
@@ -181,7 +199,7 @@ The frontend development client includes a backend audience mapper so the backen
 
 ## Current State
 
-- The backend has a validated auth boundary, token-derived user sync, administrative access APIs, effective-access resolution, and OTP issuance.
-- The reverse proxy still contains TODOs around direct OTP verification against the system database and saving session information.
-- Session review endpoints and database edit/delete flows are still pending on the backend side.
+- The backend has a validated auth boundary, token-derived user sync, administrative access APIs, effective-access resolution, OTP issuance, and admin session review.
+- The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, and records session start/end metadata.
+- Database edit/delete flows and technical credential hardening remain deferred.
 - The repository includes local certificates under `certs/` for development use.

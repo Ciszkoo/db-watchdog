@@ -1,0 +1,52 @@
+name: Reverse Proxy CI
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "reverse-proxy/**"
+      - "Makefile"
+      - ".github/workflows/reverse-proxy-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "reverse-proxy/**"
+      - "Makefile"
+      - ".github/workflows/reverse-proxy-ci.yml"
+
+jobs:
+  proxy-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Run tests
+        run: |
+          cd reverse-proxy
+          go test ./...
+
+  proxy-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build module
+        run: |
+          cd reverse-proxy
+          go build ./...

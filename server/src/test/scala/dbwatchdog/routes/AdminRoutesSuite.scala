@@ -3,6 +3,7 @@ package dbwatchdog.routes
 import java.time.Instant
 import java.util.UUID
 
+import cats.data.{Kleisli, OptionT}
 import cats.effect.{IO, Ref}
 import io.circe.Json
 import org.http4s.Method
@@ -14,6 +15,7 @@ import weaver.SimpleIOSuite
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
+  AdminDatabaseSessionResponse,
   AdminUserResponse,
   CreateDatabaseRequest,
   DatabaseResponse,
@@ -35,12 +37,44 @@ object AdminRoutesSuite extends SimpleIOSuite {
     for {
       calls <- Ref.of[IO, Int](0)
       response <- AdminRoutes
-        .routes(recordingAdminService(calls))
+        .routes(recordingAdminService(sessionCalls = calls))
         .orNotFound
-        .run(Request[IO](Method.GET, uri"/admin/teams"))
+        .run(Request[IO](Method.GET, uri"/admin/sessions"))
       observedCalls <- calls.get
     } yield expect(response.status == Status.Forbidden) and
       expect(observedCalls == 0)
+  }
+
+  test("DBA callers can list recorded sessions") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    for {
+      response <- AdminRoutes
+        .routes(recordingAdminService())
+        .orNotFound
+        .run(Request[IO](Method.GET, uri"/admin/sessions"))
+      body <- response.bodyText.compile.string
+    } yield expect(response.status == Status.Ok) and
+      expect(body.contains("credentialId")) and
+      expect(body.contains("clientAddr"))
+  }
+
+  test(
+    "admin session route returns 401 when auth middleware rejects the request"
+  ) {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthMiddleware.noSpider(
+        Kleisli(_ => OptionT.none[IO, AuthUser]),
+        _ => IO.pure(org.http4s.Response[IO](status = Status.Unauthorized))
+      )
+
+    for {
+      response <- AdminRoutes
+        .routes(recordingAdminService())
+        .orNotFound
+        .run(Request[IO](Method.GET, uri"/admin/sessions"))
+    } yield expect(response.status == Status.Unauthorized)
   }
 
   test(
@@ -125,6 +159,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
+      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def createDatabase(request: CreateDatabaseRequest) =
         IO.raiseError(ServiceError.NotFound("database missing"))
@@ -154,6 +189,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
 
   private def recordingAdminService(
       teamCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
+      sessionCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       createCalls: Ref[IO, Vector[CreateDatabaseRequest]] =
         Ref.unsafe[IO, Vector[CreateDatabaseRequest]](Vector.empty)
   ): AdminService = new AdminService {
@@ -170,6 +206,47 @@ object AdminRoutesSuite extends SimpleIOSuite {
       )
 
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
+
+    def listSessions() =
+      sessionCalls.update(_ + 1) *> IO.pure(
+        List(
+          AdminDatabaseSessionResponse(
+            id = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            credentialId =
+              UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+            clientAddr = "127.0.0.1:5432",
+            startedAt = createdAt,
+            endedAt = Some(updatedAt),
+            bytesSent = Some(120L),
+            bytesReceived = Some(240L),
+            user = AdminUserResponse(
+              id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+              keycloakId = "kc-123",
+              email = "john@example.com",
+              firstName = "John",
+              lastName = "Doe",
+              team = TeamResponse(
+                id = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                name = "backend",
+                createdAt = createdAt,
+                updatedAt = updatedAt
+              ),
+              createdAt = createdAt,
+              updatedAt = updatedAt
+            ),
+            database = DatabaseResponse(
+              id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+              engine = "postgres",
+              host = "db.internal",
+              port = 5432,
+              technicalUser = "technical_user",
+              databaseName = "analytics",
+              createdAt = createdAt,
+              updatedAt = updatedAt
+            )
+          )
+        )
+      )
 
     def listDatabases() =
       IO.pure(

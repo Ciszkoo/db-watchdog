@@ -11,13 +11,11 @@ import dbwatchdog.auth.AuthUser
 import dbwatchdog.service.UserService
 
 object UserRoutes {
-
-  def routes(
+  def authedRoutes(
       userService: UserService
-  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] = {
-
-    val authedRoutes = AuthedRoutes.of[AuthUser, IO] {
-      case POST -> Root / "users" / "me" / "sync" as authUser => {
+  ): AuthedRoutes[AuthUser, IO] =
+    AuthedRoutes.of[AuthUser, IO] {
+      case POST -> Root / "users" / "me" / "sync" as authUser =>
         val res = for {
           user <- userService.syncUser(authUser.toSyncInput)
           response <- Ok(user.asJson)
@@ -26,9 +24,10 @@ object UserRoutes {
         res.handleErrorWith { case error =>
           InternalServerError(s"Error: ${error.getMessage}")
         }
-      }
     }
 
-    authMiddleware(authedRoutes)
-  }
+  def routes(
+      userService: UserService
+  )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] =
+    authMiddleware(authedRoutes(userService))
 }

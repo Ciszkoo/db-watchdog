@@ -74,6 +74,37 @@ object DatabaseResponse {
     )
 }
 
+final case class AdminDatabaseSessionResponse(
+    id: UUID,
+    credentialId: UUID,
+    clientAddr: String,
+    startedAt: Instant,
+    endedAt: Option[Instant],
+    bytesSent: Option[Long],
+    bytesReceived: Option[Long],
+    user: AdminUserResponse,
+    database: DatabaseResponse
+) derives ConfiguredCodec
+
+object AdminDatabaseSessionResponse {
+  def fromDomain(
+      session: DatabaseSession,
+      user: AdminUserResponse,
+      database: DatabaseResponse
+  ): AdminDatabaseSessionResponse =
+    AdminDatabaseSessionResponse(
+      id = session.id,
+      credentialId = session.credentialId,
+      clientAddr = session.clientAddr,
+      startedAt = session.startedAt,
+      endedAt = session.endedAt,
+      bytesSent = session.bytesSent,
+      bytesReceived = session.bytesReceived,
+      user = user,
+      database = database
+    )
+}
+
 final case class CreateDatabaseRequest(
     engine: String,
     host: String,

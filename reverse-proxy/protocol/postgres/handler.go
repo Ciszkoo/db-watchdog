@@ -91,7 +91,7 @@ func (h *Handler) Handshake(ctx context.Context, conn net.Conn) (*HandshakeResul
 	}, nil
 }
 
-// Connect to actual db as 'proxy_user'
+// Connect to the resolved backend database using the stored technical credentials.
 func (h *Handler) ConnectToBackend(
 	addr string,
 	user string,
