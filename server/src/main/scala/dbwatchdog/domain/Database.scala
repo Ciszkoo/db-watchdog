@@ -17,11 +17,21 @@ final case class Database(
     technicalPassword: String, // Temporary solution until credential hardening is implemented end to end.
     databaseName: String,
     createdAt: Instant,
-    updatedAt: Instant
+    updatedAt: Instant,
+    deactivatedAt: Option[Instant]
 ) extends Persisted[UUID] derives ConfiguredCodec
 
 // Repository inputs
 final case class CreateDatabase(
+    engine: String,
+    host: String,
+    port: Int,
+    technicalUser: String,
+    technicalPassword: String,
+    databaseName: String
+)
+
+final case class UpdateDatabase(
     engine: String,
     host: String,
     port: Int,

@@ -19,6 +19,8 @@ import dbwatchdog.domain.{
   DatabaseResponse,
   Team,
   TeamResponse,
+  UpdateDatabase,
+  UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantInput,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionInput,
@@ -35,6 +37,12 @@ trait AdminService {
   def listUserDatabaseAccessExtensions()
       : IO[List[AdminUserDatabaseAccessExtensionResponse]]
   def createDatabase(request: CreateDatabaseRequest): IO[DatabaseResponse]
+  def updateDatabase(
+      databaseId: UUID,
+      request: UpdateDatabaseRequest
+  ): IO[DatabaseResponse]
+  def deactivateDatabase(databaseId: UUID): IO[DatabaseResponse]
+  def reactivateDatabase(databaseId: UUID): IO[DatabaseResponse]
   def upsertTeamDatabaseGrant(
       request: UpsertTeamDatabaseGrantRequest
   ): IO[Unit]
@@ -170,13 +178,59 @@ object AdminService {
             .map(DatabaseResponse.fromDomain)
         )
 
+      def updateDatabase(
+          databaseId: UUID,
+          request: UpdateDatabaseRequest
+      ): IO[DatabaseResponse] =
+        db.transact(
+          for {
+            existing <- requireDatabase(databaseId)
+            updated <- repos.databases.update(
+              databaseId,
+              UpdateDatabase(
+                engine = request.engine,
+                host = request.host,
+                port = request.port,
+                technicalUser = request.technicalUser,
+                technicalPassword = request.technicalPassword
+                  .getOrElse(existing.technicalPassword),
+                databaseName = request.databaseName
+              )
+            )
+          } yield DatabaseResponse.fromDomain(updated)
+        )
+
+      def deactivateDatabase(databaseId: UUID): IO[DatabaseResponse] = {
+        val now = Instant.now()
+
+        db.transact(
+          for {
+            _ <- requireDatabase(databaseId)
+            updated <- repos.databases.deactivate(databaseId, now)
+            _ <- repos.temporaryAccessCredentials
+              .invalidateActiveForDatabase(databaseId, now)
+          } yield DatabaseResponse.fromDomain(updated)
+        )
+      }
+
+      def reactivateDatabase(databaseId: UUID): IO[DatabaseResponse] =
+        db.transact(
+          for {
+            _ <- requireDatabase(databaseId)
+            updated <- repos.databases.reactivate(databaseId)
+          } yield DatabaseResponse.fromDomain(updated)
+        )
+
       def upsertTeamDatabaseGrant(
           request: UpsertTeamDatabaseGrantRequest
       ): IO[Unit] =
         db.transact(
           for {
             _ <- requireTeam(request.teamId)
-            _ <- requireDatabase(request.databaseId)
+            _ <- requireActiveDatabaseForMutation(
+              request.databaseId,
+              "team grants"
+            )
             _ <- repos.teamDatabaseGrants.upsert(
               UpsertTeamDatabaseGrantInput(
                 teamId = request.teamId,
@@ -207,7 +261,10 @@ object AdminService {
           for {
             _ <- validateExpiry(request.expiresAt, now)
             _ <- requireUser(request.userId)
-            _ <- requireDatabase(request.databaseId)
+            _ <- requireActiveDatabaseForMutation(
+              request.databaseId,
+              "user access extensions"
+            )
             _ <- repos.userDatabaseAccessExtensions.upsert(
               UpsertUserDatabaseAccessExtensionInput(
                 userId = request.userId,
@@ -261,6 +318,20 @@ object AdminService {
               ServiceError.NotFound(s"Database $databaseId not found")
             )
           )
+
+      private def requireActiveDatabaseForMutation(
+          databaseId: UUID,
+          attemptedMutation: String
+      ): ConnectionIO[PersistedDatabase] =
+        requireDatabase(databaseId).flatMap { database =>
+          if database.deactivatedAt.isEmpty then database.pure[ConnectionIO]
+          else
+            ServiceError
+              .Conflict(
+                s"Database $databaseId is inactive and cannot receive new $attemptedMutation"
+              )
+              .raiseError[ConnectionIO, PersistedDatabase]
+        }
 
       private def validateExpiry(
           expiresAt: Option[Instant],

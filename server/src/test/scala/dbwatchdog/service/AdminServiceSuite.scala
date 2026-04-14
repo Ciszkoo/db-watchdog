@@ -20,6 +20,8 @@ import dbwatchdog.domain.{
   DatabaseSession,
   Team,
   TeamDatabaseGrant,
+  UpdateDatabase,
+  UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantInput,
   UpsertUserDatabaseAccessExtensionInput,
   UpsertUserInput,
@@ -59,7 +61,8 @@ object AdminServiceSuite extends SimpleIOSuite {
     technicalPassword = "super-secret",
     databaseName = "analytics",
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    deactivatedAt = None
   )
 
   private val newerSession = DatabaseSession(
@@ -236,6 +239,198 @@ object AdminServiceSuite extends SimpleIOSuite {
     )
   }
 
+  test(
+    "updateDatabase preserves the stored password when technicalPassword is omitted"
+  ) {
+    var observedUpdate: Option[UpdateDatabase] = None
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(
+          List(database),
+          onUpdate = (_, input) => observedUpdate = Some(input)
+        ),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      updated <- service.updateDatabase(
+        database.id,
+        UpdateDatabaseRequest(
+          engine = database.engine,
+          host = "edited.internal",
+          port = 6432,
+          technicalUser = "edited_user",
+          technicalPassword = None,
+          databaseName = "analytics_reporting"
+        )
+      )
+    } yield expect(
+      observedUpdate.exists(_.technicalPassword == database.technicalPassword)
+    ) and
+      expect(updated.host == "edited.internal") and
+      expect(updated.port == 6432) and
+      expect(updated.technicalUser == "edited_user") and
+      expect(updated.databaseName == "analytics_reporting")
+  }
+
+  test(
+    "updateDatabase rotates the stored password when technicalPassword is provided"
+  ) {
+    var observedUpdate: Option[UpdateDatabase] = None
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(
+          List(database),
+          onUpdate = (_, input) => observedUpdate = Some(input)
+        ),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      _ <- service.updateDatabase(
+        database.id,
+        UpdateDatabaseRequest(
+          engine = database.engine,
+          host = database.host,
+          port = database.port,
+          technicalUser = database.technicalUser,
+          technicalPassword = Some("rotated-secret"),
+          databaseName = database.databaseName
+        )
+      )
+    } yield expect(
+      observedUpdate.exists(_.technicalPassword == "rotated-secret")
+    )
+  }
+
+  test(
+    "deactivateDatabase invalidates active OTPs and returns the inactive row"
+  ) {
+    var invalidatedDatabaseId: Option[UUID] = None
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials =
+          stubTemporaryAccessCredentialRepository(onInvalidateForDatabase =
+            (databaseId, _) => invalidatedDatabaseId = Some(databaseId)
+          ),
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      updated <- service.deactivateDatabase(database.id)
+    } yield expect(invalidatedDatabaseId.contains(database.id)) and
+      expect(updated.id == database.id) and
+      expect(!updated.isActive) and
+      expect(updated.deactivatedAt.nonEmpty)
+  }
+
+  test(
+    "grant and extension mutations reject inactive databases with conflict"
+  ) {
+    val inactiveDatabase = database.copy(
+      deactivatedAt = Some(Instant.parse("2024-01-06T00:00:00Z"))
+    )
+    var grantUpsertCalled = false
+    var extensionUpsertCalled = false
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(inactiveDatabase)),
+        teamDatabaseGrants = new TeamDatabaseGrantRepository {
+          override val tableName = "team_database_grants"
+          override val columns = Nil
+
+          def upsert(input: UpsertTeamDatabaseGrantInput) = {
+            grantUpsertCalled = true
+            failConnection("upsert should not be called")
+          }
+
+          def list = List.empty[TeamDatabaseGrant].pure[ConnectionIO]
+
+          def findDatabaseIdsByTeamId(teamId: UUID) =
+            List.empty[UUID].pure[ConnectionIO]
+
+          def delete(teamId: UUID, databaseId: UUID) =
+            failConnection("delete should not be called")
+        },
+        userDatabaseAccessExtensions =
+          new UserDatabaseAccessExtensionRepository {
+            override val tableName = "user_database_access_extensions"
+            override val columns = Nil
+
+            def upsert(input: UpsertUserDatabaseAccessExtensionInput) = {
+              extensionUpsertCalled = true
+              failConnection("upsert should not be called")
+            }
+
+            def list =
+              List.empty[UserDatabaseAccessExtension].pure[ConnectionIO]
+
+            def findActiveByUserId(userId: UUID, now: Instant) =
+              List.empty[UserDatabaseAccessExtension].pure[ConnectionIO]
+
+            def delete(userId: UUID, databaseId: UUID) =
+              failConnection("delete should not be called")
+          },
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      grantResult <- service
+        .upsertTeamDatabaseGrant(
+          dbwatchdog.domain
+            .UpsertTeamDatabaseGrantRequest(team.id, inactiveDatabase.id)
+        )
+        .attempt
+      extensionResult <- service
+        .upsertUserDatabaseAccessExtension(
+          dbwatchdog.domain.UpsertUserDatabaseAccessExtensionRequest(
+            user.id,
+            inactiveDatabase.id,
+            Some(Instant.parse("2099-01-01T00:00:00Z"))
+          )
+        )
+        .attempt
+    } yield expect(
+      grantResult.left.exists(_.getMessage.contains("inactive"))
+    ) and expect(
+      extensionResult.left.exists(_.getMessage.contains("inactive"))
+    ) and expect(!grantUpsertCalled) and
+      expect(!extensionUpsertCalled)
+  }
+
   private val pureDatabase: Database = new Database {
     def transact[A](query: ConnectionIO[A]): IO[A] =
       query.foldMap(unexpectedConnectionOp)
@@ -305,7 +500,8 @@ object AdminServiceSuite extends SimpleIOSuite {
     }
 
   private def stubDatabaseRepository(
-      databases: List[PersistedDatabase]
+      databases: List[PersistedDatabase],
+      onUpdate: (UUID, UpdateDatabase) => Unit = (_, _) => ()
   ): DatabaseRepository =
     new DatabaseRepository {
       override val tableName = "databases"
@@ -314,6 +510,56 @@ object AdminServiceSuite extends SimpleIOSuite {
       def insert(input: CreateDatabase) =
         failConnection("insert should not be called")
 
+      def update(id: UUID, input: UpdateDatabase) =
+        databases
+          .find(_.id == id)
+          .map { existing =>
+            onUpdate(id, input)
+            existing.copy(
+              engine = input.engine,
+              host = input.host,
+              port = input.port,
+              technicalUser = input.technicalUser,
+              technicalPassword = input.technicalPassword,
+              databaseName = input.databaseName,
+              updatedAt = Instant.parse("2024-01-03T00:00:00Z")
+            )
+          }
+          .liftTo[ConnectionIO](
+            new IllegalStateException(s"Missing database $id")
+          )
+
+      def deactivate(id: UUID, now: Instant) =
+        databases
+          .find(_.id == id)
+          .map(existing =>
+            existing.copy(
+              updatedAt =
+                if existing.deactivatedAt.isEmpty then now
+                else existing.updatedAt,
+              deactivatedAt = existing.deactivatedAt.orElse(Some(now))
+            )
+          )
+          .liftTo[ConnectionIO](
+            new IllegalStateException(s"Missing database $id")
+          )
+
+      def reactivate(id: UUID) =
+        databases
+          .find(_.id == id)
+          .map(existing =>
+            existing.copy(
+              updatedAt =
+                if existing.deactivatedAt.nonEmpty then
+                  Instant.parse("2024-01-05T00:00:00Z")
+                else existing.updatedAt,
+              deactivatedAt = None
+            )
+          )
+          .liftTo[ConnectionIO](
+            new IllegalStateException(s"Missing database $id")
+          )
+
       def list = databases.pure[ConnectionIO]
 
       def findById(id: UUID) = databases.find(_.id == id).pure[ConnectionIO]
@@ -321,6 +567,18 @@ object AdminServiceSuite extends SimpleIOSuite {
       def findByIds(ids: Set[UUID]) =
         databases
           .filter(database => ids.contains(database.id))
+          .pure[ConnectionIO]
+
+      def findActiveById(id: UUID) =
+        databases
+          .find(database => database.id == id && database.deactivatedAt.isEmpty)
+          .pure[ConnectionIO]
+
+      def findActiveByIds(ids: Set[UUID]) =
+        databases
+          .filter(database =>
+            ids.contains(database.id) && database.deactivatedAt.isEmpty
+          )
           .pure[ConnectionIO]
     }
 
@@ -391,6 +649,11 @@ object AdminServiceSuite extends SimpleIOSuite {
 
   private val noopTemporaryAccessCredentialRepository
       : TemporaryAccessCredentialRepository =
+    stubTemporaryAccessCredentialRepository()
+
+  private def stubTemporaryAccessCredentialRepository(
+      onInvalidateForDatabase: (UUID, Instant) => Unit = (_, _) => ()
+  ): TemporaryAccessCredentialRepository =
     new TemporaryAccessCredentialRepository {
       override val tableName = "temporary_access_credentials"
       override val columns = Nil
@@ -410,5 +673,13 @@ object AdminServiceSuite extends SimpleIOSuite {
       ) = failConnection(
         "invalidateActiveForUserAndDatabase should not be called"
       )
+
+      def invalidateActiveForDatabase(
+          databaseId: UUID,
+          now: Instant
+      ) = {
+        onInvalidateForDatabase(databaseId, now)
+        1.pure[ConnectionIO]
+      }
     }
 }

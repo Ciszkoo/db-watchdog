@@ -11,8 +11,8 @@ PROXY_DIR := reverse-proxy
 SERVER_DIR := server
 UI_DIR := ui
 
-PROXY_TLS_CERT_FILE ?= $(ROOT_DIR)/certs/server.crt
-PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/server.key
+PROXY_TLS_CERT_FILE ?= $(ROOT_DIR)/certs/proxy.crt
+PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/proxy.key
 
 .PHONY: \
 	help \

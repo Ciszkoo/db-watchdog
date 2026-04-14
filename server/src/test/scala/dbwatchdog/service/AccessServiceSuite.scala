@@ -71,7 +71,8 @@ object AccessServiceSuite extends SimpleIOSuite {
     technicalPassword = "secret-a",
     databaseName = "alpha",
     createdAt = Instant.parse("2024-01-01T00:00:00Z"),
-    updatedAt = Instant.parse("2024-01-01T00:00:00Z")
+    updatedAt = Instant.parse("2024-01-01T00:00:00Z"),
+    deactivatedAt = None
   )
   private val databaseB = PersistedDatabase(
     id = UUID.fromString("ffffffff-1111-2222-3333-444444444444"),
@@ -82,7 +83,11 @@ object AccessServiceSuite extends SimpleIOSuite {
     technicalPassword = "secret-b",
     databaseName = "beta",
     createdAt = Instant.parse("2024-01-01T00:00:00Z"),
-    updatedAt = Instant.parse("2024-01-01T00:00:00Z")
+    updatedAt = Instant.parse("2024-01-01T00:00:00Z"),
+    deactivatedAt = None
+  )
+  private val inactiveDatabaseA = databaseA.copy(
+    deactivatedAt = Some(Instant.parse("2024-01-02T00:00:00Z"))
   )
   private val futureExpiry = Instant.parse("2099-01-01T00:00:00Z")
   private val pastExpiry = Instant.parse("2020-01-01T00:00:00Z")
@@ -157,7 +162,7 @@ object AccessServiceSuite extends SimpleIOSuite {
       ),
       databaseRepository = stubDatabaseRepository(
         databases = List(databaseA),
-        onFindByIds = ids => observedIds = Some(ids)
+        onFindActiveByIds = ids => observedIds = Some(ids)
       )
     )
 
@@ -177,7 +182,7 @@ object AccessServiceSuite extends SimpleIOSuite {
       ),
       databaseRepository = stubDatabaseRepository(
         databases = List(databaseA),
-        onFindByIds = ids => observedIds = Some(ids)
+        onFindActiveByIds = ids => observedIds = Some(ids)
       )
     )
 
@@ -185,6 +190,22 @@ object AccessServiceSuite extends SimpleIOSuite {
       access <- service.getEffectiveAccessForUser(user.id)
     } yield expect(access.isEmpty) and
       expect(observedIds.contains(Set.empty))
+  }
+
+  test("effective access excludes inactive databases") {
+    val service = makeAccessService(
+      userRepository = stubUserRepository(foundUser = Some(user)),
+      teamDatabaseGrantRepository =
+        stubTeamDatabaseGrantRepository(List(inactiveDatabaseA.id)),
+      extensionRepository = stubExtensionRepository(
+        List(extension(inactiveDatabaseA.id, Some(futureExpiry)))
+      ),
+      databaseRepository = stubDatabaseRepository(List(inactiveDatabaseA))
+    )
+
+    for {
+      access <- service.getEffectiveAccessForUser(user.id)
+    } yield expect(access.isEmpty)
   }
 
   test(
@@ -252,6 +273,32 @@ object AccessServiceSuite extends SimpleIOSuite {
     ) and expect(!created)
   }
 
+  test("OTP issuance treats inactive databases as unavailable") {
+    var created = false
+    val service = makeAccessService(
+      userRepository = stubUserRepository(foundUser = Some(user)),
+      teamDatabaseGrantRepository =
+        stubTeamDatabaseGrantRepository(List(inactiveDatabaseA.id)),
+      extensionRepository = stubExtensionRepository(Nil),
+      databaseRepository = stubDatabaseRepository(List(inactiveDatabaseA)),
+      temporaryCredentialRepository = stubTemporaryCredentialRepository(
+        onCreate = _ => created = true
+      ),
+      userService = stubUserService(user)
+    )
+
+    for {
+      result <- service
+        .issueOtp(AuthTestSupport.authUser, inactiveDatabaseA.id)
+        .attempt
+    } yield expect(
+      result.left.exists {
+        case ServiceError.NotFound(_) => true
+        case _                        => false
+      }
+    ) and expect(!created)
+  }
+
   test(
     "authenticated effective-access syncs the caller from token claims before resolving access"
   ) {
@@ -265,7 +312,7 @@ object AccessServiceSuite extends SimpleIOSuite {
       extensionRepository = stubExtensionRepository(Nil),
       databaseRepository = stubDatabaseRepository(
         List(databaseA),
-        onFindByIds = _ => eventOrder = eventOrder :+ "resolve-access"
+        onFindActiveByIds = _ => eventOrder = eventOrder :+ "resolve-access"
       ),
       userService = recordingUserService(
         resolvedUser = user,
@@ -300,8 +347,8 @@ object AccessServiceSuite extends SimpleIOSuite {
       extensionRepository = stubExtensionRepository(Nil),
       databaseRepository = stubDatabaseRepository(
         List(databaseA),
-        onFindById = _ => eventOrder = eventOrder :+ "require-database",
-        onFindByIds = _ => eventOrder = eventOrder :+ "resolve-access"
+        onFindActiveById = _ => eventOrder = eventOrder :+ "require-database",
+        onFindActiveByIds = _ => eventOrder = eventOrder :+ "resolve-access"
       ),
       temporaryCredentialRepository = stubTemporaryCredentialRepository(
         onInvalidate = (_, _, _) => eventOrder = eventOrder :+ "invalidate",
@@ -419,8 +466,8 @@ object AccessServiceSuite extends SimpleIOSuite {
 
   private def stubDatabaseRepository(
       databases: List[PersistedDatabase],
-      onFindById: UUID => Unit = _ => (),
-      onFindByIds: Set[UUID] => Unit = _ => ()
+      onFindActiveById: UUID => Unit = _ => (),
+      onFindActiveByIds: Set[UUID] => Unit = _ => ()
   ): DatabaseRepository = new DatabaseRepository {
     override val tableName = "databases"
     override val columns = Nil
@@ -431,17 +478,39 @@ object AccessServiceSuite extends SimpleIOSuite {
     def insert(input: CreateDatabase) =
       failConnection("insert should not be called")
 
+    def update(id: UUID, input: dbwatchdog.domain.UpdateDatabase) =
+      failConnection("update should not be called")
+
+    def deactivate(id: UUID, now: Instant) =
+      failConnection("deactivate should not be called")
+
+    def reactivate(id: UUID) =
+      failConnection("reactivate should not be called")
+
     def list = databaseIndex.values.toList.pure[ConnectionIO]
 
-    def findById(id: UUID) = {
-      onFindById(id)
-      databaseIndex.get(id).pure[ConnectionIO]
-    }
+    def findById(id: UUID) = databaseIndex.get(id).pure[ConnectionIO]
 
-    def findByIds(ids: Set[UUID]) = {
-      onFindByIds(ids)
+    def findByIds(ids: Set[UUID]) =
       databaseIndex.values
         .filter(database => ids.contains(database.id))
+        .toList
+        .pure[ConnectionIO]
+
+    def findActiveById(id: UUID) = {
+      onFindActiveById(id)
+      databaseIndex
+        .get(id)
+        .filter(_.deactivatedAt.isEmpty)
+        .pure[ConnectionIO]
+    }
+
+    def findActiveByIds(ids: Set[UUID]) = {
+      onFindActiveByIds(ids)
+      databaseIndex.values
+        .filter(database =>
+          ids.contains(database.id) && database.deactivatedAt.isEmpty
+        )
         .toList
         .pure[ConnectionIO]
     }
@@ -517,6 +586,11 @@ object AccessServiceSuite extends SimpleIOSuite {
         onInvalidate(userId, databaseId, now)
         1.pure[ConnectionIO]
       }
+
+      def invalidateActiveForDatabase(
+          databaseId: UUID,
+          now: Instant
+      ) = failConnection("invalidateActiveForDatabase should not be called")
     }
 
   private def stubDatabaseSessionRepository(): DatabaseSessionRepository =

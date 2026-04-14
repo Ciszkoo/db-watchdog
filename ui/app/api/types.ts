@@ -18,4 +18,6 @@ export interface DatabaseResponse {
   databaseName: string
   createdAt: string
   updatedAt: string
+  deactivatedAt: string | null
+  isActive: boolean
 }

@@ -18,6 +18,7 @@ import dbwatchdog.domain.{
   DatabaseResponse,
   EffectiveDatabaseAccessResponse,
   TeamResponse,
+  UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
@@ -43,6 +44,15 @@ object RoutesSuite extends SimpleIOSuite {
     def listUserDatabaseAccessExtensions() =
       IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
     def createDatabase(request: CreateDatabaseRequest) =
+      IO.raiseError(new IllegalStateException("not used"))
+    def updateDatabase(
+        databaseId: java.util.UUID,
+        request: UpdateDatabaseRequest
+    ) =
+      IO.raiseError(new IllegalStateException("not used"))
+    def deactivateDatabase(databaseId: java.util.UUID) =
+      IO.raiseError(new IllegalStateException("not used"))
+    def reactivateDatabase(databaseId: java.util.UUID) =
       IO.raiseError(new IllegalStateException("not used"))
     def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
       IO.unit

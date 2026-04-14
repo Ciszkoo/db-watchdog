@@ -64,6 +64,9 @@ The backend now also exposes:
 - `GET /api/v1/admin/sessions`
 - `GET /api/v1/admin/databases`
 - `POST /api/v1/admin/databases`
+- `PUT /api/v1/admin/databases/{databaseId}`
+- `POST /api/v1/admin/databases/{databaseId}/deactivate`
+- `POST /api/v1/admin/databases/{databaseId}/reactivate`
 - `GET /api/v1/admin/team-database-grants`
 - `PUT /api/v1/admin/team-database-grants`
 - `DELETE /api/v1/admin/team-database-grants/{teamId}/{databaseId}`
@@ -75,7 +78,8 @@ The backend now also exposes:
 - `POST /api/v1/me/databases/{databaseId}/otp`
 
 Database responses never expose `technicalPassword`.
-The backend now issues short-lived OTPs backed by stored SHA-256 hashes, and `GET /api/v1/admin/sessions` exposes the recorded proxy sessions for `DBA` review.
+The backend now issues short-lived OTPs backed by stored SHA-256 hashes, `GET /api/v1/admin/sessions` exposes the recorded proxy sessions for `DBA` review, and inactive databases stay visible in the admin registry while being excluded from effective-access resolution and OTP issuance.
+`PUT /api/v1/admin/team-database-grants` and `PUT /api/v1/admin/user-database-access-extensions` now return `409 Conflict` when the target database is inactive.
 
 Backend tests are split into unit and integration suites:
 
@@ -124,12 +128,16 @@ The UI is now role-aware from Keycloak token claims:
 From the admin UI, a `DBA` can now:
 
 - register databases from the browser
+- edit registered databases from the browser
+- deactivate and reactivate registered databases without losing grants or history
 - review current team-to-database grants
 - add and remove team grants
 - review current per-user access extensions
 - add, update, and remove user extensions
 - preview one selected user’s effective access
 - review recorded proxy sessions
+
+Inactive databases remain visible in the admin registry and in historical grant/extension tables, but the UI no longer offers them in new grant or extension selectors.
 
 Non-`DBA` users who navigate directly to `/admin/*` now get an explicit in-app access-denied screen instead of a silent redirect.
 
@@ -142,7 +150,7 @@ make proxy-run
 ```
 
 It accepts PostgreSQL client connections on local TCP port `5432`, validates OTPs directly against the system database, resolves the backend target from the registered `databases` row, and records session lifecycle rows in `database_sessions`.
-The default `proxy-run` target injects `certs/server.crt` and `certs/server.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+The default `proxy-run` target injects `certs/proxy.crt` and `certs/proxy.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
 The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
 
 ```bash
@@ -154,6 +162,8 @@ For local smoke tests, the PostgreSQL login shape through the proxy is:
 - `user=<user email>`
 - `password=<issued otp>`
 - `dbname=<registered databaseName>`
+
+If a database has been deactivated, previously issued but unused OTPs for that database no longer authenticate through the proxy and still surface as the same generic authentication failure.
 
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
@@ -233,7 +243,7 @@ The frontend development client includes a backend audience mapper so the backen
 ## Current State
 
 - The backend has a validated auth boundary, token-derived user sync, administrative access APIs, read/write access-state management, effective-access resolution, OTP issuance, and admin session review.
-- The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, and records session start/end metadata.
-- The frontend now includes both the end-user OTP workflow and the first operable `DBA` admin console.
-- Database edit/delete flows, technical credential hardening, session filtering/pagination, and Playwright end-to-end coverage remain deferred.
+- The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, records session start/end metadata, and rejects inactive-database OTP consumption through the same generic auth failure path.
+- The frontend now includes both the end-user OTP workflow and an operable `DBA` admin console for database registration, editing, reversible deactivation, access-state review, and session review.
+- Hard delete flows, technical credential hardening, session filtering/pagination, and Playwright end-to-end coverage remain deferred.
 - The repository includes local certificates under `certs/` for development use.

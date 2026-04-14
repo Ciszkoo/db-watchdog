@@ -220,7 +220,9 @@ object AccessRoutesSuite extends SimpleIOSuite {
             technicalUser = "technical_user",
             databaseName = "analytics",
             createdAt = Instant.parse("2026-01-01T00:00:00Z"),
-            updatedAt = Instant.parse("2026-01-01T00:00:00Z")
+            updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
+            deactivatedAt = None,
+            isActive = true
           )
         )
       )

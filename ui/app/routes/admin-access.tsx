@@ -124,19 +124,21 @@ export default function AdminAccessPage() {
         adminApi.listUserDatabaseAccessExtensions(),
       ])
 
+      const activeDatabases = databases.filter(database => database.isActive)
+
       setState({ teams, users, databases, grants, extensions })
       setGrantForm(current => ({
         teamId: pickExistingOrFirst(current.teamId, teams.map(team => team.id)),
         databaseId: pickExistingOrFirst(
           current.databaseId,
-          databases.map(database => database.id)
+          activeDatabases.map(database => database.id)
         ),
       }))
       setExtensionForm(current => ({
         userId: pickExistingOrFirst(current.userId, users.map(user => user.id)),
         databaseId: pickExistingOrFirst(
           current.databaseId,
-          databases.map(database => database.id)
+          activeDatabases.map(database => database.id)
         ),
         expiresAtLocal: current.expiresAtLocal,
       }))
@@ -164,6 +166,7 @@ export default function AdminAccessPage() {
   const teamById = new Map(state.teams.map(team => [team.id, team]))
   const userById = new Map(state.users.map(user => [user.id, user]))
   const databaseById = new Map(state.databases.map(database => [database.id, database]))
+  const activeDatabases = state.databases.filter(database => database.isActive)
   const selectedUser = userById.get(selectedUserId)
   const canSubmitGrant = Boolean(grantForm.teamId && grantForm.databaseId)
   const canSubmitExtension = Boolean(extensionForm.userId && extensionForm.databaseId)
@@ -338,7 +341,7 @@ export default function AdminAccessPage() {
                 <SelectField
                   label="Grant database"
                   value={grantForm.databaseId}
-                  options={state.databases.map(database => ({
+                  options={activeDatabases.map(database => ({
                     value: database.id,
                     label: database.databaseName,
                   }))}
@@ -393,8 +396,10 @@ export default function AdminAccessPage() {
                             {teamById.get(grant.teamId)?.name ?? grant.teamId}
                           </TableCell>
                           <TableCell>
-                            {databaseById.get(grant.databaseId)?.databaseName ??
-                              grant.databaseId}
+                            <DatabaseNameCell
+                              database={databaseById.get(grant.databaseId)}
+                              fallback={grant.databaseId}
+                            />
                           </TableCell>
                           <TableCell>{grant.createdAt}</TableCell>
                           <TableCell>{grant.updatedAt}</TableCell>
@@ -456,7 +461,7 @@ export default function AdminAccessPage() {
                 <SelectField
                   label="Extension database"
                   value={extensionForm.databaseId}
-                  options={state.databases.map(database => ({
+                  options={activeDatabases.map(database => ({
                     value: database.id,
                     label: database.databaseName,
                   }))}
@@ -529,8 +534,10 @@ export default function AdminAccessPage() {
                             <TableCell>{user?.email ?? extension.userId}</TableCell>
                             <TableCell>{user?.team.name ?? "Unknown team"}</TableCell>
                             <TableCell>
-                              {databaseById.get(extension.databaseId)?.databaseName ??
-                                extension.databaseId}
+                              <DatabaseNameCell
+                                database={databaseById.get(extension.databaseId)}
+                                fallback={extension.databaseId}
+                              />
                             </TableCell>
                             <TableCell>{extension.expiresAt ?? "No expiry"}</TableCell>
                             <TableCell>{extension.createdAt}</TableCell>
@@ -731,6 +738,27 @@ function TableHead({ children }: { children: ReactNode }) {
 
 function TableCell({ children }: { children: ReactNode }) {
   return <td className="px-3 py-3 align-top text-stone-700">{children}</td>
+}
+
+function DatabaseNameCell({
+  database,
+  fallback,
+}: {
+  database:
+    | Awaited<ReturnType<typeof adminApi.listDatabases>>[number]
+    | undefined
+  fallback: string
+}) {
+  if (!database) {
+    return <>{fallback}</>
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span>{database.databaseName}</span>
+      {!database.isActive ? <Badge variant="outline">Inactive</Badge> : null}
+    </div>
+  )
 }
 
 function pickExistingOrFirst(current: string, values: string[]): string {

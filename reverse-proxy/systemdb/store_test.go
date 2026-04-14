@@ -124,6 +124,12 @@ func TestConsumeOTPRejectsInvalidCredentials(t *testing.T) {
 			databaseName:    "mysql_db",
 			otp:             "valid-otp",
 		},
+		{
+			name:            "inactive database",
+			loginIdentifier: "jane@example.com",
+			databaseName:    "inactive_db",
+			otp:             "valid-otp",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -174,6 +180,7 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 		"u.email = $2",
 		"d.database_name = $3",
 		"d.engine = 'postgres'",
+		"d.deactivated_at IS NULL",
 		"SET used_at = NOW()",
 		"updated_at = NOW()",
 	}

@@ -127,7 +127,7 @@ object AccessService {
           activeExtensions = queriedExtensions.filter(extension =>
             extension.expiresAt.forall(_.isAfter(now))
           )
-          databases <- repos.databases.findByIds(
+          databases <- repos.databases.findActiveByIds(
             teamGrantedDatabaseIds.toSet ++ activeExtensions.map(_.databaseId)
           )
         } yield {
@@ -193,7 +193,7 @@ object AccessService {
           databaseId: UUID
       ): ConnectionIO[PersistedDatabase] =
         repos.databases
-          .findById(databaseId)
+          .findActiveById(databaseId)
           .flatMap(
             _.liftTo[ConnectionIO](
               ServiceError.NotFound(s"Database $databaseId not found")

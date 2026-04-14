@@ -57,6 +57,15 @@ export interface CreateDatabaseInput {
   databaseName: string
 }
 
+export interface UpdateDatabaseInput {
+  engine: string
+  host: string
+  port: number
+  technicalUser: string
+  technicalPassword: string | null
+  databaseName: string
+}
+
 export interface UpsertTeamDatabaseGrantInput {
   teamId: string
   databaseId: string
@@ -86,6 +95,31 @@ export const adminApi = {
 
   async createDatabase(input: CreateDatabaseInput): Promise<DatabaseResponse> {
     const response = await apiClient.post<DatabaseResponse>("/admin/databases", input)
+    return response.data
+  },
+
+  async updateDatabase(
+    databaseId: string,
+    input: UpdateDatabaseInput
+  ): Promise<DatabaseResponse> {
+    const response = await apiClient.put<DatabaseResponse>(
+      `/admin/databases/${databaseId}`,
+      input
+    )
+    return response.data
+  },
+
+  async deactivateDatabase(databaseId: string): Promise<DatabaseResponse> {
+    const response = await apiClient.post<DatabaseResponse>(
+      `/admin/databases/${databaseId}/deactivate`
+    )
+    return response.data
+  },
+
+  async reactivateDatabase(databaseId: string): Promise<DatabaseResponse> {
+    const response = await apiClient.post<DatabaseResponse>(
+      `/admin/databases/${databaseId}/reactivate`
+    )
     return response.data
   },
 

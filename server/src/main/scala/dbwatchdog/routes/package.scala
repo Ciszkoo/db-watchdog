@@ -42,6 +42,7 @@ package object routes {
   ): IO[Response[IO]] =
     run.handleErrorWith {
       case ServiceError.BadRequest(message) => BadRequest(message)
+      case ServiceError.Conflict(message)   => Conflict(message)
       case ServiceError.Forbidden(message)  => Forbidden(message)
       case ServiceError.NotFound(message)   => NotFound(message)
       case error => InternalServerError(s"Error: ${error.getMessage}")

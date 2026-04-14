@@ -1,8 +1,13 @@
 import axios from "axios"
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react"
 
-import { adminApi, type CreateDatabaseInput } from "~/api/adminApi"
+import {
+  adminApi,
+  type CreateDatabaseInput,
+  type UpdateDatabaseInput,
+} from "~/api/adminApi"
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert"
+import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import {
   Card,
@@ -22,6 +27,13 @@ type DatabaseFormState = {
   databaseName: string
 }
 
+type FormMode =
+  | { kind: "create" }
+  | {
+      kind: "edit"
+      databaseId: string
+    }
+
 const initialFormState: DatabaseFormState = {
   engine: "postgres",
   host: "",
@@ -36,8 +48,10 @@ export default function AdminDatabasesPage() {
     ReturnType<typeof adminApi.listDatabases>
   >>([])
   const [form, setForm] = useState<DatabaseFormState>(initialFormState)
+  const [formMode, setFormMode] = useState<FormMode>({ kind: "create" })
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeMutationId, setActiveMutationId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null)
@@ -62,31 +76,115 @@ export default function AdminDatabasesPage() {
     void loadDatabases()
   }, [loadDatabases])
 
+  useEffect(() => {
+    if (formMode.kind !== "edit") {
+      return
+    }
+
+    const selectedDatabase = databases.find(database => database.id === formMode.databaseId)
+    if (!selectedDatabase) {
+      setFormMode({ kind: "create" })
+      setForm(initialFormState)
+      return
+    }
+
+    setForm(toFormState(selectedDatabase))
+  }, [databases, formMode])
+
+  const selectedDatabase =
+    formMode.kind === "edit"
+      ? databases.find(database => database.id === formMode.databaseId) ?? null
+      : null
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(null)
 
-    const payload: CreateDatabaseInput = {
-      engine: form.engine,
-      host: form.host.trim(),
-      port: Number(form.port),
-      technicalUser: form.technicalUser.trim(),
-      technicalPassword: form.technicalPassword,
-      databaseName: form.databaseName.trim(),
-    }
-
     try {
-      await adminApi.createDatabase(payload)
-      setForm(initialFormState)
-      setSubmitSuccess("Database registered successfully.")
+      if (formMode.kind === "create") {
+        const payload: CreateDatabaseInput = {
+          engine: form.engine,
+          host: form.host.trim(),
+          port: Number(form.port),
+          technicalUser: form.technicalUser.trim(),
+          technicalPassword: form.technicalPassword,
+          databaseName: form.databaseName.trim(),
+        }
+
+        await adminApi.createDatabase(payload)
+        setForm(initialFormState)
+        setSubmitSuccess("Database registered successfully.")
+      } else {
+        const payload: UpdateDatabaseInput = {
+          engine: form.engine,
+          host: form.host.trim(),
+          port: Number(form.port),
+          technicalUser: form.technicalUser.trim(),
+          technicalPassword: form.technicalPassword === "" ? null : form.technicalPassword,
+          databaseName: form.databaseName.trim(),
+        }
+
+        await adminApi.updateDatabase(formMode.databaseId, payload)
+        setSubmitSuccess("Database updated successfully.")
+      }
+
       await loadDatabases()
     } catch (error) {
-      console.error("Failed to create database", error)
-      setSubmitError(mapDatabaseCreateError(error))
+      console.error("Failed to save database", error)
+      setSubmitError(mapDatabaseError(error))
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleEdit = (databaseId: string) => {
+    setSubmitError(null)
+    setSubmitSuccess(null)
+    setFormMode({ kind: "edit", databaseId })
+  }
+
+  const handleResetForm = () => {
+    setSubmitError(null)
+    setSubmitSuccess(null)
+    setFormMode({ kind: "create" })
+    setForm(initialFormState)
+  }
+
+  const handleStatusChange = async (
+    database: Awaited<ReturnType<typeof adminApi.listDatabases>>[number]
+  ) => {
+    const actionLabel = database.isActive ? "deactivate" : "reactivate"
+    const confirmed = window.confirm(
+      database.isActive
+        ? `Deactivate ${database.databaseName}? Existing grants remain, but new OTPs and effective access will stop immediately.`
+        : `Reactivate ${database.databaseName}? Existing grants and extensions will become effective again.`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setActiveMutationId(database.id)
+    setSubmitError(null)
+    setSubmitSuccess(null)
+
+    try {
+      if (database.isActive) {
+        await adminApi.deactivateDatabase(database.id)
+        setSubmitSuccess("Database deactivated successfully.")
+      } else {
+        await adminApi.reactivateDatabase(database.id)
+        setSubmitSuccess("Database reactivated successfully.")
+      }
+
+      await loadDatabases()
+    } catch (error) {
+      console.error(`Failed to ${actionLabel} database`, error)
+      setSubmitError(mapDatabaseError(error))
+    } finally {
+      setActiveMutationId(null)
     }
   }
 
@@ -96,31 +194,36 @@ export default function AdminDatabasesPage() {
         <CardHeader>
           <CardTitle>Admin Databases</CardTitle>
           <CardDescription>
-            Register database targets that the reverse proxy can reach through stored
-            technical credentials.
+            Register, update, deactivate, and reactivate database targets that the
+            reverse proxy can reach through stored technical credentials.
           </CardDescription>
         </CardHeader>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Register database</CardTitle>
+          <CardTitle>
+            {formMode.kind === "edit" && selectedDatabase
+              ? `Edit ${selectedDatabase.databaseName}`
+              : "Register database"}
+          </CardTitle>
           <CardDescription>
-            The current slice supports creation and read-only review. Edit and delete
-            remain deferred.
+            {formMode.kind === "edit"
+              ? "Leave Technical password blank to keep the current stored password."
+              : "Create a database entry that can later receive grants, extensions, and OTP traffic."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {submitSuccess ? (
             <Alert className="border-teal-200 bg-teal-50 text-teal-950">
-              <AlertTitle>Database created</AlertTitle>
+              <AlertTitle>Database request completed</AlertTitle>
               <AlertDescription>{submitSuccess}</AlertDescription>
             </Alert>
           ) : null}
 
           {submitError ? (
             <Alert variant="destructive">
-              <AlertTitle>Database creation failed</AlertTitle>
+              <AlertTitle>Database request failed</AlertTitle>
               <AlertDescription>{submitError}</AlertDescription>
             </Alert>
           ) : null}
@@ -165,10 +268,21 @@ export default function AdminDatabasesPage() {
               }
             />
 
-            <div className="lg:col-span-2">
+            <div className="flex flex-wrap gap-3 lg:col-span-2">
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating..." : "Create database"}
+                {isSubmitting
+                  ? formMode.kind === "edit"
+                    ? "Saving..."
+                    : "Creating..."
+                  : formMode.kind === "edit"
+                    ? "Save changes"
+                    : "Create database"}
               </Button>
+              {formMode.kind === "edit" ? (
+                <Button type="button" variant="outline" onClick={handleResetForm}>
+                  Cancel edit
+                </Button>
+              ) : null}
             </div>
           </form>
         </CardContent>
@@ -178,8 +292,8 @@ export default function AdminDatabasesPage() {
         <CardHeader>
           <CardTitle>Registered databases</CardTitle>
           <CardDescription>
-            Review the current registry backing proxy routing and effective-access
-            calculations.
+            Review the current registry backing proxy routing, access management, and
+            OTP availability.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -213,26 +327,61 @@ export default function AdminDatabasesPage() {
                 <thead className="text-xs uppercase tracking-[0.18em] text-stone-500">
                   <tr>
                     <TableHead>Database</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Engine</TableHead>
                     <TableHead>Host</TableHead>
                     <TableHead>Port</TableHead>
                     <TableHead>Technical user</TableHead>
-                    <TableHead>Created</TableHead>
                     <TableHead>Updated</TableHead>
+                    <TableHead>Action</TableHead>
                   </tr>
                 </thead>
                 <tbody>
-                  {databases.map(database => (
-                    <tr key={database.id} className="border-t border-stone-200/80">
-                      <TableCell>{database.databaseName}</TableCell>
-                      <TableCell>{database.engine}</TableCell>
-                      <TableCell>{database.host}</TableCell>
-                      <TableCell>{database.port}</TableCell>
-                      <TableCell>{database.technicalUser}</TableCell>
-                      <TableCell>{database.createdAt}</TableCell>
-                      <TableCell>{database.updatedAt}</TableCell>
-                    </tr>
-                  ))}
+                  {databases.map(database => {
+                    const isMutating = activeMutationId === database.id
+
+                    return (
+                      <tr key={database.id} className="border-t border-stone-200/80">
+                        <TableCell>{database.databaseName}</TableCell>
+                        <TableCell>
+                          <Badge variant={database.isActive ? "secondary" : "outline"}>
+                            {database.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{database.engine}</TableCell>
+                        <TableCell>{database.host}</TableCell>
+                        <TableCell>{database.port}</TableCell>
+                        <TableCell>{database.technicalUser}</TableCell>
+                        <TableCell>{database.updatedAt}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isSubmitting || isMutating}
+                              onClick={() => handleEdit(database.id)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant={database.isActive ? "destructive" : "outline"}
+                              size="sm"
+                              disabled={isSubmitting || isMutating}
+                              onClick={() => void handleStatusChange(database)}
+                            >
+                              {isMutating
+                                ? database.isActive
+                                  ? "Deactivating..."
+                                  : "Reactivating..."
+                                : database.isActive
+                                  ? "Deactivate"
+                                  : "Reactivate"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -275,10 +424,23 @@ function TableCell({ children }: { children: ReactNode }) {
   return <td className="px-3 py-3 align-top text-stone-700">{children}</td>
 }
 
-function mapDatabaseCreateError(error: unknown): string {
+function toFormState(
+  database: Awaited<ReturnType<typeof adminApi.listDatabases>>[number]
+): DatabaseFormState {
+  return {
+    engine: database.engine,
+    host: database.host,
+    port: String(database.port),
+    technicalUser: database.technicalUser,
+    technicalPassword: "",
+    databaseName: database.databaseName,
+  }
+}
+
+function mapDatabaseError(error: unknown): string {
   if (axios.isAxiosError(error) && typeof error.response?.data === "string") {
     return error.response.data
   }
 
-  return "The backend rejected the new database or could not be reached."
+  return "The backend rejected the database request or could not be reached."
 }
