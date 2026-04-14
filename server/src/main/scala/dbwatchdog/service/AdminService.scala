@@ -192,9 +192,8 @@ object AdminService {
                 host = request.host,
                 port = request.port,
                 technicalUser = request.technicalUser,
-                technicalPassword =
-                  request.technicalPassword
-                    .getOrElse(existing.technicalPassword),
+                technicalPassword = request.technicalPassword
+                  .getOrElse(existing.technicalPassword),
                 databaseName = request.databaseName
               )
             )
@@ -325,8 +324,7 @@ object AdminService {
           attemptedMutation: String
       ): ConnectionIO[PersistedDatabase] =
         requireDatabase(databaseId).flatMap { database =>
-          if database.deactivatedAt.isEmpty then
-            database.pure[ConnectionIO]
+          if database.deactivatedAt.isEmpty then database.pure[ConnectionIO]
           else
             ServiceError
               .Conflict(
