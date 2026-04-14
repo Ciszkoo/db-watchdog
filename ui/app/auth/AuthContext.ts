@@ -4,6 +4,7 @@ import type { UserInfo } from "./keycloak"
 export interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
+  isDba: boolean
   authError: string | null
   user: UserInfo | null
   token: string | undefined

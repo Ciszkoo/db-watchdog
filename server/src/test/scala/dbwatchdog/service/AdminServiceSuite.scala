@@ -12,11 +12,14 @@ import weaver.SimpleIOSuite
 
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
+  AdminTeamDatabaseGrantResponse,
+  AdminUserDatabaseAccessExtensionResponse,
   CreateDatabase,
   CreateDatabaseSessionInput,
   Database as PersistedDatabase,
   DatabaseSession,
   Team,
+  TeamDatabaseGrant,
   UpsertTeamDatabaseGrantInput,
   UpsertUserDatabaseAccessExtensionInput,
   UpsertUserInput,
@@ -87,6 +90,40 @@ object AdminServiceSuite extends SimpleIOSuite {
     updatedAt = updatedAt
   )
 
+  private val otherTeamGrant = TeamDatabaseGrant(
+    id = UUID.fromString("abababab-abab-abab-abab-abababababab"),
+    teamId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
+    databaseId = UUID.fromString("11111111-2222-3333-4444-555555555555"),
+    createdAt = createdAt,
+    updatedAt = updatedAt
+  )
+
+  private val teamGrant = TeamDatabaseGrant(
+    id = UUID.fromString("12121212-1212-1212-1212-121212121212"),
+    teamId = team.id,
+    databaseId = database.id,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+  )
+
+  private val otherExtension = UserDatabaseAccessExtension(
+    id = UUID.fromString("13131313-1313-1313-1313-131313131313"),
+    userId = UUID.fromString("88888888-8888-8888-8888-888888888888"),
+    databaseId = UUID.fromString("66666666-6666-6666-6666-666666666666"),
+    expiresAt = None,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+  )
+
+  private val userExtension = UserDatabaseAccessExtension(
+    id = UUID.fromString("14141414-1414-1414-1414-141414141414"),
+    userId = user.id,
+    databaseId = database.id,
+    expiresAt = Some(Instant.parse("2024-01-05T10:00:00Z")),
+    createdAt = createdAt,
+    updatedAt = updatedAt
+  )
+
   test(
     "listSessions preserves repository order and populates nested user and database payloads"
   ) {
@@ -139,6 +176,63 @@ object AdminServiceSuite extends SimpleIOSuite {
       result <- service.listSessions().attempt
     } yield expect(
       result.left.exists(_.getMessage.contains(s"Missing user ${user.id}"))
+    )
+  }
+
+  test("listTeamDatabaseGrants returns stable ordered flat records") {
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants =
+          stubTeamDatabaseGrantRepository(List(otherTeamGrant, teamGrant)),
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      grants <- service.listTeamDatabaseGrants()
+    } yield expect(
+      grants == List(
+        AdminTeamDatabaseGrantResponse.fromDomain(otherTeamGrant),
+        AdminTeamDatabaseGrantResponse.fromDomain(teamGrant)
+      )
+    )
+  }
+
+  test("listUserDatabaseAccessExtensions returns stable ordered records") {
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          stubUserDatabaseAccessExtensionRepository(
+            List(otherExtension, userExtension)
+          ),
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      extensions <- service.listUserDatabaseAccessExtensions()
+    } yield expect(
+      extensions == List(
+        AdminUserDatabaseAccessExtensionResponse.fromDomain(otherExtension),
+        AdminUserDatabaseAccessExtensionResponse.fromDomain(userExtension)
+      )
+    ) and expect(
+      extensions.lastOption
+        .flatMap(_.expiresAt)
+        .contains(userExtension.expiresAt.get)
     )
   }
 
@@ -250,13 +344,17 @@ object AdminServiceSuite extends SimpleIOSuite {
       ) = failConnection("markEnded should not be called")
     }
 
-  private val noopTeamDatabaseGrantRepository: TeamDatabaseGrantRepository =
+  private def stubTeamDatabaseGrantRepository(
+      grants: List[TeamDatabaseGrant]
+  ): TeamDatabaseGrantRepository =
     new TeamDatabaseGrantRepository {
       override val tableName = "team_database_grants"
       override val columns = Nil
 
       def upsert(input: UpsertTeamDatabaseGrantInput) =
         failConnection("upsert should not be called")
+
+      def list = grants.pure[ConnectionIO]
 
       def findDatabaseIdsByTeamId(teamId: UUID) =
         List.empty[UUID].pure[ConnectionIO]
@@ -265,8 +363,12 @@ object AdminServiceSuite extends SimpleIOSuite {
         failConnection("delete should not be called")
     }
 
-  private val noopUserDatabaseAccessExtensionRepository
-      : UserDatabaseAccessExtensionRepository =
+  private val noopTeamDatabaseGrantRepository: TeamDatabaseGrantRepository =
+    stubTeamDatabaseGrantRepository(Nil)
+
+  private def stubUserDatabaseAccessExtensionRepository(
+      extensions: List[UserDatabaseAccessExtension]
+  ): UserDatabaseAccessExtensionRepository =
     new UserDatabaseAccessExtensionRepository {
       override val tableName = "user_database_access_extensions"
       override val columns = Nil
@@ -274,12 +376,18 @@ object AdminServiceSuite extends SimpleIOSuite {
       def upsert(input: UpsertUserDatabaseAccessExtensionInput) =
         failConnection("upsert should not be called")
 
+      def list = extensions.pure[ConnectionIO]
+
       def findActiveByUserId(userId: UUID, now: Instant) =
         List.empty[UserDatabaseAccessExtension].pure[ConnectionIO]
 
       def delete(userId: UUID, databaseId: UUID) =
         failConnection("delete should not be called")
     }
+
+  private val noopUserDatabaseAccessExtensionRepository
+      : UserDatabaseAccessExtensionRepository =
+    stubUserDatabaseAccessExtensionRepository(Nil)
 
   private val noopTemporaryAccessCredentialRepository
       : TemporaryAccessCredentialRepository =

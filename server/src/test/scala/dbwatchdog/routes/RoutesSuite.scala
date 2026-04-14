@@ -10,6 +10,8 @@ import weaver.SimpleIOSuite
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
   AdminDatabaseSessionResponse,
+  AdminTeamDatabaseGrantResponse,
+  AdminUserDatabaseAccessExtensionResponse,
   AdminUserResponse,
   AuthenticatedUserSyncInput,
   CreateDatabaseRequest,
@@ -36,6 +38,10 @@ object RoutesSuite extends SimpleIOSuite {
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
     def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
     def listDatabases() = IO.pure(List.empty[DatabaseResponse])
+    def listTeamDatabaseGrants() =
+      IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
+    def listUserDatabaseAccessExtensions() =
+      IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
     def createDatabase(request: CreateDatabaseRequest) =
       IO.raiseError(new IllegalStateException("not used"))
     def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =

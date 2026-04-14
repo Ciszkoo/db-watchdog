@@ -24,6 +24,8 @@ trait TeamDatabaseGrantRepository
       input: UpsertTeamDatabaseGrantInput
   ): ConnectionIO[TeamDatabaseGrant]
 
+  def list: ConnectionIO[List[TeamDatabaseGrant]]
+
   def delete(
       teamId: UUID,
       databaseId: UUID
@@ -48,6 +50,11 @@ object TeamDatabaseGrantRepository {
       """ ++ returningF)
         .query[TeamDatabaseGrant]
         .unique
+
+    def list: ConnectionIO[List[TeamDatabaseGrant]] =
+      (selectF ++ fr"ORDER BY team_database_grants.team_id, team_database_grants.database_id, team_database_grants.id")
+        .query[TeamDatabaseGrant]
+        .to[List]
 
     def delete(
         teamId: UUID,

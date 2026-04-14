@@ -74,6 +74,50 @@ object DatabaseResponse {
     )
 }
 
+final case class AdminTeamDatabaseGrantResponse(
+    id: UUID,
+    teamId: UUID,
+    databaseId: UUID,
+    createdAt: Instant,
+    updatedAt: Instant
+) derives ConfiguredCodec
+
+object AdminTeamDatabaseGrantResponse {
+  def fromDomain(
+      grant: TeamDatabaseGrant
+  ): AdminTeamDatabaseGrantResponse =
+    AdminTeamDatabaseGrantResponse(
+      id = grant.id,
+      teamId = grant.teamId,
+      databaseId = grant.databaseId,
+      createdAt = grant.createdAt,
+      updatedAt = grant.updatedAt
+    )
+}
+
+final case class AdminUserDatabaseAccessExtensionResponse(
+    id: UUID,
+    userId: UUID,
+    databaseId: UUID,
+    expiresAt: Option[Instant],
+    createdAt: Instant,
+    updatedAt: Instant
+) derives ConfiguredCodec
+
+object AdminUserDatabaseAccessExtensionResponse {
+  def fromDomain(
+      extension: UserDatabaseAccessExtension
+  ): AdminUserDatabaseAccessExtensionResponse =
+    AdminUserDatabaseAccessExtensionResponse(
+      id = extension.id,
+      userId = extension.userId,
+      databaseId = extension.databaseId,
+      expiresAt = extension.expiresAt,
+      createdAt = extension.createdAt,
+      updatedAt = extension.updatedAt
+    )
+}
+
 final case class AdminDatabaseSessionResponse(
     id: UUID,
     credentialId: UUID,

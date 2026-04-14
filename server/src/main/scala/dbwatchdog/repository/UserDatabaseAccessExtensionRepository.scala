@@ -29,6 +29,8 @@ trait UserDatabaseAccessExtensionRepository
       input: UpsertUserDatabaseAccessExtensionInput
   ): ConnectionIO[UserDatabaseAccessExtension]
 
+  def list: ConnectionIO[List[UserDatabaseAccessExtension]]
+
   def delete(
       userId: UUID,
       databaseId: UUID
@@ -56,6 +58,11 @@ object UserDatabaseAccessExtensionRepository {
         """ ++ returningF)
           .query[UserDatabaseAccessExtension]
           .unique
+
+      def list: ConnectionIO[List[UserDatabaseAccessExtension]] =
+        (selectF ++ fr"ORDER BY user_database_access_extensions.user_id, user_database_access_extensions.database_id, user_database_access_extensions.id")
+          .query[UserDatabaseAccessExtension]
+          .to[List]
 
       def delete(
           userId: UUID,
