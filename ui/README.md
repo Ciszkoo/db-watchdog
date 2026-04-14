@@ -11,6 +11,7 @@ make ui-install
 make ui-dev
 make ui-lint
 make ui-typecheck
+make ui-test
 make ui-build
 ```
 
@@ -29,6 +30,7 @@ pnpm install
 pnpm dev
 pnpm lint
 pnpm typecheck
+pnpm test
 pnpm build
 pnpm start
 ```
@@ -40,3 +42,5 @@ pnpm start
 - backend API base URL: `http://localhost:8080/api/v1`
 
 The frontend authenticates through Keycloak and synchronizes the current user with `POST /users/me/sync` after startup.
+If frontend auth bootstrap fails, the app now renders a recovery state with a sign-in action instead of remaining on an infinite loading screen.
+Backend `401` API responses also re-enter the sign-in flow instead of leaving the dashboard in a retry-only error state.
