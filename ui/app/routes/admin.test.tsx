@@ -19,6 +19,9 @@ vi.mock("~/api/adminApi", () => ({
     listUsers: vi.fn(),
     listDatabases: vi.fn(),
     createDatabase: vi.fn(),
+    updateDatabase: vi.fn(),
+    deactivateDatabase: vi.fn(),
+    reactivateDatabase: vi.fn(),
     listTeamDatabaseGrants: vi.fn(),
     upsertTeamDatabaseGrant: vi.fn(),
     deleteTeamDatabaseGrant: vi.fn(),
@@ -42,6 +45,9 @@ const listTeamsMock = vi.mocked(adminApi.listTeams)
 const listUsersMock = vi.mocked(adminApi.listUsers)
 const listDatabasesMock = vi.mocked(adminApi.listDatabases)
 const createDatabaseMock = vi.mocked(adminApi.createDatabase)
+const updateDatabaseMock = vi.mocked(adminApi.updateDatabase)
+const deactivateDatabaseMock = vi.mocked(adminApi.deactivateDatabase)
+const reactivateDatabaseMock = vi.mocked(adminApi.reactivateDatabase)
 const listTeamGrantsMock = vi.mocked(adminApi.listTeamDatabaseGrants)
 const upsertTeamGrantMock = vi.mocked(adminApi.upsertTeamDatabaseGrant)
 const deleteTeamGrantMock = vi.mocked(adminApi.deleteTeamDatabaseGrant)
@@ -96,6 +102,8 @@ const databaseA = {
   databaseName: "analytics",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  deactivatedAt: null,
+  isActive: true,
 }
 
 const databaseB = {
@@ -107,6 +115,16 @@ const databaseB = {
   databaseName: "warehouse",
   createdAt: "2026-01-02T00:00:00Z",
   updatedAt: "2026-01-02T00:00:00Z",
+  deactivatedAt: null,
+  isActive: true,
+}
+
+const inactiveDatabase = {
+  ...databaseB,
+  id: "database-c",
+  databaseName: "archive",
+  deactivatedAt: "2026-01-06T00:00:00Z",
+  isActive: false,
 }
 
 const defaultAuthContext: AuthContextType = {
@@ -139,6 +157,13 @@ describe("admin routes", () => {
     listUsersMock.mockResolvedValue([userA, userB])
     listDatabasesMock.mockResolvedValue([databaseA, databaseB])
     createDatabaseMock.mockResolvedValue(databaseB)
+    updateDatabaseMock.mockResolvedValue(databaseA)
+    deactivateDatabaseMock.mockResolvedValue({
+      ...databaseA,
+      deactivatedAt: "2026-01-06T00:00:00Z",
+      isActive: false,
+    })
+    reactivateDatabaseMock.mockResolvedValue(databaseA)
     listTeamGrantsMock.mockResolvedValue([
       {
         id: "grant-a",
@@ -187,6 +212,7 @@ describe("admin routes", () => {
         extensionExpiresAt: null,
       },
     ])
+    vi.spyOn(window, "confirm").mockReturnValue(true)
   })
 
   afterEach(() => {
@@ -257,7 +283,128 @@ describe("admin routes", () => {
 
     expect(await screen.findByText("Database registered successfully.")).toBeInTheDocument()
     expect(await screen.findByText("warehouse")).toBeInTheDocument()
+    expect(screen.getAllByText("Active").length).toBeGreaterThan(0)
     expect(screen.getByLabelText("Host")).toHaveValue("")
+  })
+
+  it("supports edit mode and sends null or rotated technicalPassword values as expected", async () => {
+    updateDatabaseMock
+      .mockResolvedValueOnce({
+        ...databaseA,
+        host: "edited.internal",
+        port: 6432,
+        technicalUser: "edited_user",
+        databaseName: "analytics_reporting",
+      })
+      .mockResolvedValueOnce({
+        ...databaseA,
+        technicalUser: "rotated_user",
+      })
+
+    listDatabasesMock
+      .mockResolvedValueOnce([databaseA])
+      .mockResolvedValueOnce([
+        {
+          ...databaseA,
+          host: "edited.internal",
+          port: 6432,
+          technicalUser: "edited_user",
+          databaseName: "analytics_reporting",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...databaseA,
+          technicalUser: "rotated_user",
+        },
+      ])
+
+    renderApp("/admin/databases")
+
+    expect(await screen.findByText("analytics")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument()
+    expect(screen.getByLabelText("Technical password")).toHaveValue("")
+
+    fireEvent.change(screen.getByLabelText("Host"), {
+      target: { value: "edited.internal" },
+    })
+    fireEvent.change(screen.getByLabelText("Port"), {
+      target: { value: "6432" },
+    })
+    fireEvent.change(screen.getByLabelText("Technical user"), {
+      target: { value: "edited_user" },
+    })
+    fireEvent.change(screen.getByLabelText("Database name"), {
+      target: { value: "analytics_reporting" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    await waitFor(() =>
+      expect(updateDatabaseMock).toHaveBeenNthCalledWith(1, databaseA.id, {
+        engine: "postgres",
+        host: "edited.internal",
+        port: 6432,
+        technicalUser: "edited_user",
+        technicalPassword: null,
+        databaseName: "analytics_reporting",
+      })
+    )
+
+    expect(await screen.findByText("Database updated successfully.")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Technical user"), {
+      target: { value: "rotated_user" },
+    })
+    fireEvent.change(screen.getByLabelText("Technical password"), {
+      target: { value: "rotated-secret" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    await waitFor(() =>
+      expect(updateDatabaseMock).toHaveBeenNthCalledWith(2, databaseA.id, {
+        engine: "postgres",
+        host: "edited.internal",
+        port: 6432,
+        technicalUser: "rotated_user",
+        technicalPassword: "rotated-secret",
+        databaseName: "analytics_reporting",
+      })
+    )
+  })
+
+  it("deactivate and reactivate actions refresh the registry", async () => {
+    listDatabasesMock
+      .mockResolvedValueOnce([databaseA])
+      .mockResolvedValueOnce([
+        {
+          ...databaseA,
+          deactivatedAt: "2026-01-06T00:00:00Z",
+          isActive: false,
+        },
+      ])
+      .mockResolvedValueOnce([databaseA])
+
+    renderApp("/admin/databases")
+
+    expect(await screen.findByText("analytics")).toBeInTheDocument()
+    expect(screen.getByText("Active")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }))
+
+    await waitFor(() => expect(deactivateDatabaseMock).toHaveBeenCalledWith(databaseA.id))
+    expect(await screen.findByText("Database deactivated successfully.")).toBeInTheDocument()
+    expect(await screen.findByText("Inactive")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Reactivate" }))
+
+    await waitFor(() => expect(reactivateDatabaseMock).toHaveBeenCalledWith(databaseA.id))
+    expect(await screen.findByText("Database reactivated successfully.")).toBeInTheDocument()
+    await waitFor(() => expect(listDatabasesMock).toHaveBeenCalledTimes(3))
   })
 
   it("keeps entered values when database creation fails", async () => {
@@ -565,6 +712,44 @@ describe("admin routes", () => {
 
     expect(upsertTeamGrantMock).not.toHaveBeenCalled()
     expect(upsertExtensionMock).not.toHaveBeenCalled()
+  })
+
+  it("keeps inactive databases visible in existing tables while omitting them from selectors", async () => {
+    listDatabasesMock.mockResolvedValueOnce([databaseA, inactiveDatabase])
+    listTeamGrantsMock.mockResolvedValueOnce([
+      {
+        id: "grant-inactive",
+        teamId: teamA.id,
+        databaseId: inactiveDatabase.id,
+        createdAt: "2026-01-03T00:00:00Z",
+        updatedAt: "2026-01-03T00:00:00Z",
+      },
+    ])
+    listExtensionsMock.mockResolvedValueOnce([
+      {
+        id: "extension-inactive",
+        userId: userA.id,
+        databaseId: inactiveDatabase.id,
+        expiresAt: null,
+        createdAt: "2026-01-04T00:00:00Z",
+        updatedAt: "2026-01-04T00:00:00Z",
+      },
+    ])
+
+    renderApp("/admin/access")
+
+    expect((await screen.findAllByText("archive")).length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Inactive").length).toBeGreaterThan(0)
+
+    const grantOptions = within(screen.getByLabelText("Grant database")).getAllByRole(
+      "option"
+    )
+    expect(grantOptions.map(option => option.textContent)).toEqual(["analytics"])
+
+    const extensionOptions = within(
+      screen.getByLabelText("Extension database")
+    ).getAllByRole("option")
+    expect(extensionOptions.map(option => option.textContent)).toEqual(["analytics"])
   })
 
   it("renders a populated session review table", async () => {

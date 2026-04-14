@@ -22,6 +22,7 @@ import dbwatchdog.domain.{
   CreateDatabaseRequest,
   DatabaseResponse,
   TeamResponse,
+  UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
@@ -80,6 +81,83 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(extensionResponse.status == Status.Forbidden) and
       expect(observedTeamGrantCalls == 0) and
       expect(observedExtensionCalls == 0)
+  }
+
+  test(
+    "new admin database lifecycle routes return 403 for authenticated non-DBA callers"
+  ) {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware(AuthTestSupport.regularAuthUser)
+
+    for {
+      updateCalls <- Ref.of[IO, Vector[(UUID, UpdateDatabaseRequest)]](
+        Vector.empty
+      )
+      deactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
+      reactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
+      updateResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            updateCalls = updateCalls,
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.PUT,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          ).withEntity(
+            Json.obj(
+              "engine" -> Json.fromString("postgres"),
+              "host" -> Json.fromString("db.internal"),
+              "port" -> Json.fromInt(5432),
+              "technicalUser" -> Json.fromString("technical_user"),
+              "technicalPassword" -> Json.Null,
+              "databaseName" -> Json.fromString("analytics")
+            )
+          )
+        )
+      deactivateResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            updateCalls = updateCalls,
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/deactivate"
+          )
+        )
+      reactivateResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            updateCalls = updateCalls,
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/reactivate"
+          )
+        )
+      observedUpdateCalls <- updateCalls.get
+      observedDeactivateCalls <- deactivateCalls.get
+      observedReactivateCalls <- reactivateCalls.get
+    } yield expect(updateResponse.status == Status.Forbidden) and
+      expect(deactivateResponse.status == Status.Forbidden) and
+      expect(reactivateResponse.status == Status.Forbidden) and
+      expect(observedUpdateCalls.isEmpty) and
+      expect(observedDeactivateCalls.isEmpty) and
+      expect(observedReactivateCalls.isEmpty)
   }
 
   test("DBA callers can list recorded sessions") {
@@ -189,6 +267,104 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(!body.contains("technicalPassword"))
   }
 
+  test(
+    "DBA callers can update databases and nullable technicalPassword keeps JSON handling explicit"
+  ) {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val databaseId =
+      UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    val requestBody = Json.obj(
+      "engine" -> Json.fromString("postgres"),
+      "host" -> Json.fromString("edited.internal"),
+      "port" -> Json.fromInt(6432),
+      "technicalUser" -> Json.fromString("rotated_user"),
+      "technicalPassword" -> Json.Null,
+      "databaseName" -> Json.fromString("analytics_reporting")
+    )
+
+    for {
+      calls <- Ref.of[IO, Vector[(UUID, UpdateDatabaseRequest)]](Vector.empty)
+      response <- AdminRoutes
+        .routes(recordingAdminService(updateCalls = calls))
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.PUT,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          )
+            .withEntity(requestBody)
+        )
+      body <- response.bodyText.compile.string
+      observedCalls <- calls.get
+    } yield expect(response.status == Status.Ok) and
+      expect(
+        observedCalls == Vector(
+          databaseId -> UpdateDatabaseRequest(
+            engine = "postgres",
+            host = "edited.internal",
+            port = 6432,
+            technicalUser = "rotated_user",
+            technicalPassword = None,
+            databaseName = "analytics_reporting"
+          )
+        )
+      ) and
+      expect(body.contains("\"isActive\":true")) and
+      expect(!body.contains("technicalPassword"))
+  }
+
+  test("DBA callers can deactivate and reactivate databases") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val databaseId =
+      UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    for {
+      deactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
+      reactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
+      deactivateResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/deactivate"
+          )
+        )
+      deactivateBody <- deactivateResponse.bodyText.compile.string
+      reactivateResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/reactivate"
+          )
+        )
+      reactivateBody <- reactivateResponse.bodyText.compile.string
+      observedDeactivateCalls <- deactivateCalls.get
+      observedReactivateCalls <- reactivateCalls.get
+    } yield expect(deactivateResponse.status == Status.Ok) and
+      expect(reactivateResponse.status == Status.Ok) and
+      expect(observedDeactivateCalls == Vector(databaseId)) and
+      expect(observedReactivateCalls == Vector(databaseId)) and
+      expect(deactivateBody.contains("\"isActive\":false")) and
+      expect(reactivateBody.contains("\"isActive\":true"))
+  }
+
   test("admin database creation returns 400 for malformed JSON") {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
@@ -236,6 +412,12 @@ object AdminRoutesSuite extends SimpleIOSuite {
         IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
       def createDatabase(request: CreateDatabaseRequest) =
         IO.raiseError(ServiceError.NotFound("database missing"))
+      def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def deactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
+      def reactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -274,18 +456,13 @@ object AdminRoutesSuite extends SimpleIOSuite {
       def listUserDatabaseAccessExtensions() =
         IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
       def createDatabase(request: CreateDatabaseRequest) =
-        IO.pure(
-          DatabaseResponse(
-            id = UUID.randomUUID(),
-            engine = request.engine,
-            host = request.host,
-            port = request.port,
-            technicalUser = request.technicalUser,
-            databaseName = request.databaseName,
-            createdAt = createdAt,
-            updatedAt = updatedAt
-          )
-        )
+        IO.pure(sampleDatabaseResponse(id = UUID.randomUUID()))
+      def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def deactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
+      def reactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -305,6 +482,56 @@ object AdminRoutesSuite extends SimpleIOSuite {
     } yield expect(response.status == Status.BadRequest)
   }
 
+  test("admin routes return 409 when the service reports conflict") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val service = new AdminService {
+      def listTeams() = IO.pure(List.empty[TeamResponse])
+      def listUsers() = IO.pure(List.empty[AdminUserResponse])
+      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listDatabases() = IO.pure(List.empty[DatabaseResponse])
+      def listTeamDatabaseGrants() =
+        IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
+      def listUserDatabaseAccessExtensions() =
+        IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
+      def createDatabase(request: CreateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = UUID.randomUUID()))
+      def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def deactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
+      def reactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
+        IO.raiseError(ServiceError.Conflict("database inactive"))
+      def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
+        IO.unit
+      def upsertUserDatabaseAccessExtension(
+          request: UpsertUserDatabaseAccessExtensionRequest
+      ) = IO.unit
+      def deleteUserDatabaseAccessExtension(userId: UUID, databaseId: UUID) =
+        IO.unit
+    }
+
+    for {
+      response <- AdminRoutes
+        .routes(service)
+        .orNotFound
+        .run(
+          Request[IO](Method.PUT, uri"/admin/team-database-grants")
+            .withEntity(
+              Json.obj(
+                "teamId" ->
+                  Json.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                "databaseId" ->
+                  Json.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+              )
+            )
+        )
+    } yield expect(response.status == Status.Conflict)
+  }
+
   test("user extension list route maps service errors") {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
@@ -319,18 +546,13 @@ object AdminRoutesSuite extends SimpleIOSuite {
       def listUserDatabaseAccessExtensions() =
         IO.raiseError(ServiceError.NotFound("extensions missing"))
       def createDatabase(request: CreateDatabaseRequest) =
-        IO.pure(
-          DatabaseResponse(
-            id = UUID.randomUUID(),
-            engine = request.engine,
-            host = request.host,
-            port = request.port,
-            technicalUser = request.technicalUser,
-            databaseName = request.databaseName,
-            createdAt = createdAt,
-            updatedAt = updatedAt
-          )
-        )
+        IO.pure(sampleDatabaseResponse(id = UUID.randomUUID()))
+      def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def deactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
+      def reactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -358,7 +580,13 @@ object AdminRoutesSuite extends SimpleIOSuite {
       teamGrantCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       extensionCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       createCalls: Ref[IO, Vector[CreateDatabaseRequest]] =
-        Ref.unsafe[IO, Vector[CreateDatabaseRequest]](Vector.empty)
+        Ref.unsafe[IO, Vector[CreateDatabaseRequest]](Vector.empty),
+      updateCalls: Ref[IO, Vector[(UUID, UpdateDatabaseRequest)]] =
+        Ref.unsafe[IO, Vector[(UUID, UpdateDatabaseRequest)]](Vector.empty),
+      deactivateCalls: Ref[IO, Vector[UUID]] =
+        Ref.unsafe[IO, Vector[UUID]](Vector.empty),
+      reactivateCalls: Ref[IO, Vector[UUID]] =
+        Ref.unsafe[IO, Vector[UUID]](Vector.empty)
   ): AdminService = new AdminService {
     def listTeams() =
       teamCalls.update(_ + 1) *> IO.pure(
@@ -401,15 +629,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
               createdAt = createdAt,
               updatedAt = updatedAt
             ),
-            database = DatabaseResponse(
-              id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-              engine = "postgres",
-              host = "db.internal",
-              port = 5432,
-              technicalUser = "technical_user",
-              databaseName = "analytics",
-              createdAt = createdAt,
-              updatedAt = updatedAt
+            database = sampleDatabaseResponse(
+              id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
             )
           )
         )
@@ -418,15 +639,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     def listDatabases() =
       IO.pure(
         List(
-          DatabaseResponse(
-            id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-            engine = "postgres",
-            host = "db.internal",
-            port = 5432,
-            technicalUser = "technical_user",
-            databaseName = "analytics",
-            createdAt = createdAt,
-            updatedAt = updatedAt
+          sampleDatabaseResponse(
+            id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
           )
         )
       )
@@ -462,16 +676,36 @@ object AdminRoutesSuite extends SimpleIOSuite {
 
     def createDatabase(request: CreateDatabaseRequest) =
       createCalls.update(_ :+ request) *> IO.pure(
-        DatabaseResponse(
+        sampleDatabaseResponse(
           id = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc"),
           engine = request.engine,
           host = request.host,
           port = request.port,
           technicalUser = request.technicalUser,
-          databaseName = request.databaseName,
-          createdAt = createdAt,
-          updatedAt = updatedAt
+          databaseName = request.databaseName
         )
+      )
+
+    def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+      updateCalls.update(_ :+ (databaseId -> request)) *> IO.pure(
+        sampleDatabaseResponse(
+          id = databaseId,
+          engine = request.engine,
+          host = request.host,
+          port = request.port,
+          technicalUser = request.technicalUser,
+          databaseName = request.databaseName
+        )
+      )
+
+    def deactivateDatabase(databaseId: UUID) =
+      deactivateCalls.update(_ :+ databaseId) *> IO.pure(
+        sampleDatabaseResponse(id = databaseId, isActive = false)
+      )
+
+    def reactivateDatabase(databaseId: UUID) =
+      reactivateCalls.update(_ :+ databaseId) *> IO.pure(
+        sampleDatabaseResponse(id = databaseId)
       )
 
     def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
@@ -489,4 +723,27 @@ object AdminRoutesSuite extends SimpleIOSuite {
         databaseId: UUID
     ) = IO.unit
   }
+
+  private def sampleDatabaseResponse(
+      id: UUID,
+      engine: String = "postgres",
+      host: String = "db.internal",
+      port: Int = 5432,
+      technicalUser: String = "technical_user",
+      databaseName: String = "analytics",
+      isActive: Boolean = true
+  ): DatabaseResponse =
+    DatabaseResponse(
+      id = id,
+      engine = engine,
+      host = host,
+      port = port,
+      technicalUser = technicalUser,
+      databaseName = databaseName,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+      deactivatedAt =
+        if isActive then None else Some(Instant.parse("2024-01-03T00:00:00Z")),
+      isActive = isActive
+    )
 }

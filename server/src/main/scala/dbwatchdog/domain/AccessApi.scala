@@ -57,7 +57,9 @@ final case class DatabaseResponse(
     technicalUser: String,
     databaseName: String,
     createdAt: Instant,
-    updatedAt: Instant
+    updatedAt: Instant,
+    deactivatedAt: Option[Instant],
+    isActive: Boolean
 ) derives ConfiguredCodec
 
 object DatabaseResponse {
@@ -70,7 +72,9 @@ object DatabaseResponse {
       technicalUser = database.technicalUser,
       databaseName = database.databaseName,
       createdAt = database.createdAt,
-      updatedAt = database.updatedAt
+      updatedAt = database.updatedAt,
+      deactivatedAt = database.deactivatedAt,
+      isActive = database.deactivatedAt.isEmpty
     )
 }
 
@@ -155,6 +159,15 @@ final case class CreateDatabaseRequest(
     port: Int,
     technicalUser: String,
     technicalPassword: String,
+    databaseName: String
+) derives ConfiguredCodec
+
+final case class UpdateDatabaseRequest(
+    engine: String,
+    host: String,
+    port: Int,
+    technicalUser: String,
+    technicalPassword: Option[String],
     databaseName: String
 ) derives ConfiguredCodec
 

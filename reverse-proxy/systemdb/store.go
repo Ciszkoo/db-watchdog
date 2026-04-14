@@ -28,6 +28,7 @@ WHERE tac.user_id = u.id
   AND u.email = $2
   AND d.database_name = $3
   AND d.engine = 'postgres'
+  AND d.deactivated_at IS NULL
 RETURNING tac.id, tac.user_id, tac.database_id, d.host, d.port, d.database_name, d.technical_user, d.technical_password
 `
 

@@ -10,6 +10,7 @@ import org.http4s.{AuthedRoutes, HttpRoutes}
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
   CreateDatabaseRequest,
+  UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
@@ -74,6 +75,40 @@ object AdminRoutes {
             for {
               payload <- decodeJson[CreateDatabaseRequest](request.req)
               database <- adminService.createDatabase(payload)
+              response <- Ok(database.asJson)
+            } yield response
+          }
+        }
+
+      case request @ PUT -> Root / "admin" / "databases" / databaseId as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            for {
+              parsedDatabaseId <- parseUuid(databaseId, "databaseId")
+              payload <- decodeJson[UpdateDatabaseRequest](request.req)
+              database <- adminService.updateDatabase(parsedDatabaseId, payload)
+              response <- Ok(database.asJson)
+            } yield response
+          }
+        }
+
+      case POST -> Root / "admin" / "databases" / databaseId / "deactivate" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            for {
+              parsedDatabaseId <- parseUuid(databaseId, "databaseId")
+              database <- adminService.deactivateDatabase(parsedDatabaseId)
+              response <- Ok(database.asJson)
+            } yield response
+          }
+        }
+
+      case POST -> Root / "admin" / "databases" / databaseId / "reactivate" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            for {
+              parsedDatabaseId <- parseUuid(databaseId, "databaseId")
+              database <- adminService.reactivateDatabase(parsedDatabaseId)
               response <- Ok(database.asJson)
             } yield response
           }
