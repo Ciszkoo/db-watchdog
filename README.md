@@ -165,8 +165,6 @@ For local smoke tests, the PostgreSQL login shape through the proxy is:
 
 If a database has been deactivated, previously issued but unused OTPs for that database no longer authenticate through the proxy and still surface as the same generic authentication failure.
 
-A repeatable live-stack lifecycle smoke test is available at [scripts/smoke_database_lifecycle.sh](/home/ciszko/Code/db-watchdog/scripts/smoke_database_lifecycle.sh). It brings up local dependencies if needed, exercises Keycloak -> backend -> proxy -> PostgreSQL, and verifies that deactivate/reactivate changes effective access, OTP issuance, and proxy login behavior end to end.
-
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
 ## Validation
