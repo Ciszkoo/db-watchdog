@@ -1,5 +1,7 @@
 package dbwatchdog.repository
 
+import dbwatchdog.config.AppConfig
+
 case class Repositories(
     users: UserRepository,
     teams: TeamRepository,
@@ -12,7 +14,7 @@ case class Repositories(
 
 object Repositories {
 
-  def make: Repositories =
+  def make(using config: AppConfig): Repositories =
     Repositories(
       users = UserRepository.make,
       teams = TeamRepository.make,

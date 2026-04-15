@@ -3,30 +3,50 @@ package dbwatchdog.repository
 import java.time.Instant
 import java.util.UUID
 
+import doobie.implicits.*
+import doobie.postgres.implicits.*
+
+import dbwatchdog.config.AppConfig
 import dbwatchdog.domain.{CreateDatabase, UpdateDatabase}
 import dbwatchdog.support.PostgresIntegrationSuite
 
 object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
-  private val repo = DatabaseRepository.make
-
   test("insert persists a database record") { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
+      val repo = DatabaseRepository.make
       val input = sampleCreateDatabase("primary")
 
       for {
         persisted <- db.transact(repo.insert(input))
+        persistedId = persisted.id
+        plaintextColumnExists <- db.columnExists(
+          "databases",
+          "technical_password"
+        )
+        ciphertext <- db.transact(
+          sql"""
+            SELECT technical_password_ciphertext
+            FROM databases
+            WHERE id = $persistedId
+          """.query[Array[Byte]].unique
+        )
       } yield expect(persisted.engine == input.engine) and
         expect(persisted.host == input.host) and
         expect(persisted.port == input.port) and
         expect(persisted.technicalUser == input.technicalUser) and
         expect(persisted.technicalPassword == input.technicalPassword) and
         expect(persisted.databaseName == input.databaseName) and
-        expect(persisted.deactivatedAt.isEmpty)
+        expect(persisted.deactivatedAt.isEmpty) and
+        expect(!plaintextColumnExists) and
+        expect(ciphertext.nonEmpty)
     }
   }
 
   test("update persists edited database fields") { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
+      val repo = DatabaseRepository.make
       val input = sampleCreateDatabase("editable")
 
       for {
@@ -59,6 +79,8 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
     "deactivate and reactivate drive active-only lookups and timestamp transitions"
   ) { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
+      val repo = DatabaseRepository.make
       val deactivateAt = Instant.parse("2026-04-14T10:00:00Z")
       val laterDeactivateAt = Instant.parse("2026-04-14T11:00:00Z")
 

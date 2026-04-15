@@ -52,6 +52,10 @@ object AccessServiceSuite extends SimpleIOSuite {
     otp = AppConfig.OtpConfig(
       ttlSeconds = 300,
       randomBytes = 18
+    ),
+    credentialEncryption = AppConfig.CredentialEncryptionConfig(
+      key = Some("test-technical-credentials-key"),
+      sessionSetting = "app.technical_credentials_key"
     )
   )
 

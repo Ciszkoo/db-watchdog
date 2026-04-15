@@ -22,7 +22,10 @@ func TestConsumeOTPConsumesMatchingCredential(t *testing.T) {
 	}
 	defer mock.Close()
 
-	store := NewStoreWithDB(mock)
+	store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+	if err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
 	expected := ConsumedCredential{
 		CredentialID:      uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 		UserID:            uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
@@ -35,7 +38,12 @@ func TestConsumeOTPConsumesMatchingCredential(t *testing.T) {
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(consumeOTPQuery)).
-		WithArgs(sha256Hex("PlaintextOtp"), "jane@example.com", "external_db").
+		WithArgs(
+			sha256Hex("PlaintextOtp"),
+			"jane@example.com",
+			"external_db",
+			"test-technical-credentials-key",
+		).
 		WillReturnRows(
 			pgxmock.NewRows(
 				[]string{
@@ -143,13 +151,17 @@ func TestConsumeOTPRejectsInvalidCredentials(t *testing.T) {
 			}
 			defer mock.Close()
 
-			store := NewStoreWithDB(mock)
+			store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+			if err != nil {
+				t.Fatalf("NewStoreWithDB: %v", err)
+			}
 
 			mock.ExpectQuery(regexp.QuoteMeta(consumeOTPQuery)).
 				WithArgs(
 					sha256Hex(testCase.otp),
 					testCase.loginIdentifier,
 					testCase.databaseName,
+					"test-technical-credentials-key",
 				).
 				WillReturnError(pgx.ErrNoRows)
 
@@ -174,6 +186,7 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 	t.Parallel()
 
 	requiredFragments := []string{
+		"set_config('app.technical_credentials_key', $4, false)",
 		"tac.otp_hash = $1",
 		"tac.used_at IS NULL",
 		"tac.expires_at > NOW()",
@@ -181,6 +194,8 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 		"d.database_name = $3",
 		"d.engine = 'postgres'",
 		"d.deactivated_at IS NULL",
+		"technical_password_ciphertext",
+		"pgp_sym_decrypt",
 		"SET used_at = NOW()",
 		"updated_at = NOW()",
 	}
@@ -201,7 +216,10 @@ func TestEndSessionStoresFinalCounters(t *testing.T) {
 	}
 	defer mock.Close()
 
-	store := NewStoreWithDB(mock)
+	store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+	if err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
 	sessionID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 	endedAt := time.Date(2026, time.April, 13, 10, 15, 0, 0, time.UTC)
 
@@ -221,5 +239,20 @@ func TestEndSessionStoresFinalCounters(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestNewStoreRejectsMissingTechnicalCredentialsKey(t *testing.T) {
+	t.Parallel()
+
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("new pool: %v", err)
+	}
+	defer mock.Close()
+
+	_, err = NewStoreWithDB(mock, "   ")
+	if !errors.Is(err, ErrMissingTechnicalCredentialsKey) {
+		t.Fatalf("expected ErrMissingTechnicalCredentialsKey, got %v", err)
 	}
 }

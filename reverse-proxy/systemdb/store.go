@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,12 +15,16 @@ import (
 )
 
 var ErrAuthenticationFailed = errors.New("authentication failed")
+var ErrMissingTechnicalCredentialsKey = errors.New("missing TECHNICAL_CREDENTIALS_KEY")
 
 const consumeOTPQuery = `
+WITH configured_session AS (
+  SELECT set_config('app.technical_credentials_key', $4, false)
+)
 UPDATE db_watchdog.temporary_access_credentials AS tac
 SET used_at = NOW(),
     updated_at = NOW()
-FROM db_watchdog.users AS u, db_watchdog.databases AS d
+FROM db_watchdog.users AS u, db_watchdog.databases AS d, configured_session
 WHERE tac.user_id = u.id
   AND tac.database_id = d.id
   AND tac.otp_hash = $1
@@ -29,7 +34,17 @@ WHERE tac.user_id = u.id
   AND d.database_name = $3
   AND d.engine = 'postgres'
   AND d.deactivated_at IS NULL
-RETURNING tac.id, tac.user_id, tac.database_id, d.host, d.port, d.database_name, d.technical_user, d.technical_password
+RETURNING tac.id,
+          tac.user_id,
+          tac.database_id,
+          d.host,
+          d.port,
+          d.database_name,
+          d.technical_user,
+          db_watchdog.pgp_sym_decrypt(
+            d.technical_password_ciphertext,
+            current_setting('app.technical_credentials_key')
+          )::text
 `
 
 const startSessionQuery = `
@@ -53,7 +68,8 @@ type db interface {
 }
 
 type Store struct {
-	db db
+	db                      db
+	technicalCredentialsKey string
 }
 
 type ConsumedCredential struct {
@@ -75,12 +91,23 @@ type StartSessionInput struct {
 	StartedAt    time.Time
 }
 
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{db: pool}
+func NewStore(pool *pgxpool.Pool, technicalCredentialsKey string) (*Store, error) {
+	return newStore(pool, technicalCredentialsKey)
 }
 
-func NewStoreWithDB(querier db) *Store {
-	return &Store{db: querier}
+func NewStoreWithDB(querier db, technicalCredentialsKey string) (*Store, error) {
+	return newStore(querier, technicalCredentialsKey)
+}
+
+func newStore(querier db, technicalCredentialsKey string) (*Store, error) {
+	if strings.TrimSpace(technicalCredentialsKey) == "" {
+		return nil, ErrMissingTechnicalCredentialsKey
+	}
+
+	return &Store{
+		db:                      querier,
+		technicalCredentialsKey: technicalCredentialsKey,
+	}, nil
 }
 
 func (s *Store) ConsumeOTP(
@@ -97,6 +124,7 @@ func (s *Store) ConsumeOTP(
 		sha256Hex(otp),
 		loginIdentifier,
 		databaseName,
+		s.technicalCredentialsKey,
 	).Scan(
 		&credential.CredentialID,
 		&credential.UserID,
