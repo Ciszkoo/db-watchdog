@@ -128,4 +128,26 @@ object AppConfigSuite extends SimpleIOSuite {
       expect(threw)
     }
   }
+
+  test(
+    "AppConfig.loadWithEnvironment fails when TECHNICAL_CREDENTIALS_KEY is blank"
+  ) {
+    IO {
+      val threw =
+        try {
+          AppConfig
+            .loadWithEnvironment {
+              case "TECHNICAL_CREDENTIALS_KEY" => Some("   ")
+              case _                           => None
+            }
+            .credentialEncryption
+            .requiredKey
+          false
+        } catch {
+          case _: IllegalStateException => true
+        }
+
+      expect(threw)
+    }
+  }
 }

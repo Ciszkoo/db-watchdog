@@ -65,14 +65,16 @@ object AppConfig {
       key: Option[String],
       sessionSetting: String
   ) {
+    private def nonBlank(value: String): Boolean = value.trim.nonEmpty
+
     def withFallbackKey(
         fallbackKey: Option[String]
     ): CredentialEncryptionConfig =
-      copy(key = key.filter(_.nonEmpty).orElse(fallbackKey.filter(_.nonEmpty)))
+      copy(key = key.filter(nonBlank).orElse(fallbackKey.filter(nonBlank)))
 
     def requiredKey: String =
       key
-        .filter(_.nonEmpty)
+        .filter(nonBlank)
         .getOrElse(
           throw IllegalStateException(
             s"Missing required $technicalCredentialsKeyEnvVar"
