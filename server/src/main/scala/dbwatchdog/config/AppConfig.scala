@@ -7,11 +7,27 @@ case class AppConfig(
     server: AppConfig.ServerConfig,
     db: AppConfig.DatabaseConfig,
     keycloak: AppConfig.KeycloakConfig,
-    otp: AppConfig.OtpConfig
+    otp: AppConfig.OtpConfig,
+    credentialEncryption: AppConfig.CredentialEncryptionConfig
 ) derives ConfigReader
 
 object AppConfig {
-  def load: AppConfig = ConfigSource.default.loadOrThrow[AppConfig]
+  private val technicalCredentialsKeyEnvVar = "TECHNICAL_CREDENTIALS_KEY"
+
+  def load: AppConfig =
+    loadWithEnvironment(sys.env.get)
+
+  def loadWithEnvironment(
+      environment: String => Option[String]
+  ): AppConfig = {
+    val loaded = ConfigSource.default.loadOrThrow[AppConfig]
+
+    loaded.copy(
+      credentialEncryption = loaded.credentialEncryption.withFallbackKey(
+        environment(technicalCredentialsKeyEnvVar)
+      )
+    )
+  }
 
   case class ServerConfig(
       host: String,
@@ -44,4 +60,31 @@ object AppConfig {
       ttlSeconds: Long,
       randomBytes: Int
   )
+
+  case class CredentialEncryptionConfig(
+      key: Option[String],
+      sessionSetting: String
+  ) {
+    private def nonBlank(value: String): Boolean = value.trim.nonEmpty
+
+    def withFallbackKey(
+        fallbackKey: Option[String]
+    ): CredentialEncryptionConfig =
+      copy(key = key.filter(nonBlank).orElse(fallbackKey.filter(nonBlank)))
+
+    def requiredKey: String =
+      key
+        .filter(nonBlank)
+        .getOrElse(
+          throw IllegalStateException(
+            s"Missing required $technicalCredentialsKeyEnvVar"
+          )
+        )
+
+    def sessionInitSql: String =
+      s"SELECT set_config('${escapeSqlLiteral(sessionSetting)}', '${escapeSqlLiteral(requiredKey)}', false)"
+
+    private def escapeSqlLiteral(value: String): String =
+      value.replace("'", "''")
+  }
 }

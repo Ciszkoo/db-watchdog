@@ -53,6 +53,7 @@ make server-run
 ```
 
 By default it listens on `http://localhost:8080`.
+The backend requires `TECHNICAL_CREDENTIALS_KEY`; `make server-run` injects a local development default.
 
 The backend now validates Keycloak access tokens against the configured JWKS endpoint.
 Caller identity, the required `team` claim, and the `DBA` role all come from validated token claims.
@@ -151,6 +152,7 @@ make proxy-run
 
 It accepts PostgreSQL client connections on local TCP port `5432`, validates OTPs directly against the system database, resolves the backend target from the registered `databases` row, and records session lifecycle rows in `database_sessions`.
 The default `proxy-run` target injects `certs/proxy.crt` and `certs/proxy.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
+The proxy also requires `TECHNICAL_CREDENTIALS_KEY`; `make proxy-run` injects the same local development default used by the backend.
 The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
 
 ```bash
@@ -216,13 +218,13 @@ make check
 
 The backend now persists the shared contract that later proxy work will read and write directly:
 
-- `databases` with `technical_user`, `technical_password`, and `database_name`
+- `databases` with `technical_user`, encrypted `technical_password_ciphertext`, and `database_name`
 - `team_database_grants`
 - `user_database_access_extensions`
 - `temporary_access_credentials`
 - `database_sessions`
 
-The backend creates and invalidates OTP credentials in these tables, the reverse proxy consumes them directly at connection time, and successful sessions are now written back for admin review.
+The backend creates and invalidates OTP credentials in these tables, the reverse proxy consumes them directly at connection time, and successful sessions are now written back for admin review. Both backend and proxy must share the same `TECHNICAL_CREDENTIALS_KEY` so stored database credentials can be encrypted and decrypted consistently.
 
 ## CI
 
@@ -245,5 +247,5 @@ The frontend development client includes a backend audience mapper so the backen
 - The backend has a validated auth boundary, token-derived user sync, administrative access APIs, read/write access-state management, effective-access resolution, OTP issuance, and admin session review.
 - The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, records session start/end metadata, and rejects inactive-database OTP consumption through the same generic auth failure path.
 - The frontend now includes both the end-user OTP workflow and an operable `DBA` admin console for database registration, editing, reversible deactivation, access-state review, and session review.
-- Hard delete flows, technical credential hardening, session filtering/pagination, and Playwright end-to-end coverage remain deferred.
+- Hard delete flows, session filtering/pagination, key rotation, and Playwright end-to-end coverage remain deferred.
 - The repository includes local certificates under `certs/` for development use.

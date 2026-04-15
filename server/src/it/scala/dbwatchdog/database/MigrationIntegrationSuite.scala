@@ -11,6 +11,17 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
     assertRequiredTables(db)
   }
 
+  test("latest schema keeps only encrypted technical credential storage") {
+    db =>
+      for {
+        plaintextColumn <- db.columnExists("databases", "technical_password")
+        ciphertextColumn <- db.columnExists(
+          "databases",
+          "technical_password_ciphertext"
+        )
+      } yield expect(!plaintextColumn) and expect(ciphertextColumn)
+  }
+
   private def assertRequiredTables(db: IntegrationDb): IO[Expectations] =
     for {
       users <- db.tableExists("users")

@@ -14,7 +14,7 @@ final case class Database(
     host: String,
     port: Int,
     technicalUser: String,
-    technicalPassword: String, // Temporary solution until credential hardening is implemented end to end.
+    technicalPassword: String,
     databaseName: String,
     createdAt: Instant,
     updatedAt: Instant,

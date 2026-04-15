@@ -14,6 +14,8 @@ object Main extends IOApp {
   }
 
   def runWithConfig(using config: AppConfig): IO[ExitCode] = {
+    config.credentialEncryption.requiredKey
+
     val app = for {
       resources <- AppResources.make
       repos = Repositories.make
@@ -22,7 +24,7 @@ object Main extends IOApp {
     } yield ()
 
     for {
-      _ <- Migration.migrate
+      _ <- Migration.migrate()
       exitCode <- app.use { _ =>
         IO.println(
           s"Starting server on ${config.server.host}:${config.server.port}"

@@ -6,6 +6,7 @@ import java.util.UUID
 import doobie.implicits.*
 import doobie.postgres.implicits.*
 
+import dbwatchdog.config.AppConfig
 import dbwatchdog.domain.{
   CreateDatabase,
   CreateDatabaseSessionInput,
@@ -20,7 +21,8 @@ object AccessContractRepositoryIntegrationSuite
     extends PostgresIntegrationSuite {
   private val teamRepo = TeamRepository.make
   private val userRepo = UserRepository.make
-  private val databaseRepo = DatabaseRepository.make
+  private def databaseRepo(using AppConfig): DatabaseRepository =
+    DatabaseRepository.make
   private val grantRepo = TeamDatabaseGrantRepository.make
   private val extensionRepo = UserDatabaseAccessExtensionRepository.make
   private val credentialRepo = TemporaryAccessCredentialRepository.make
@@ -28,6 +30,7 @@ object AccessContractRepositoryIntegrationSuite
 
   test("team grants upsert on the natural key") { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
       val seeded = seedAccessGraph(db)
 
       for {
@@ -50,6 +53,7 @@ object AccessContractRepositoryIntegrationSuite
 
   test("user access extensions upsert on the natural key") { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
       val seeded = seedAccessGraph(db)
       val initialExpiry = Instant.parse("2026-01-01T00:00:00Z")
       val updatedExpiry = Instant.parse("2026-02-01T00:00:00Z")
@@ -82,6 +86,7 @@ object AccessContractRepositoryIntegrationSuite
   test("temporary credentials and sessions persist the shared proxy contract") {
     db =>
       withCleanDb(db) { db =>
+        given AppConfig = db.config
         val seeded = seedAccessGraph(db)
         val expiresAt = Instant.parse("2026-03-01T00:00:00Z")
         val startedAt = Instant.parse("2026-03-01T00:05:00Z")
@@ -126,6 +131,7 @@ object AccessContractRepositoryIntegrationSuite
 
   test("database session repository lists newest sessions first") { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
       val seeded = seedAccessGraph(db)
       val olderStartedAt = Instant.parse("2026-03-01T00:05:00Z")
       val newerStartedAt = Instant.parse("2026-03-01T00:10:00Z")
@@ -185,6 +191,7 @@ object AccessContractRepositoryIntegrationSuite
   test("team, user, and database repositories list and find mirrored records") {
     db =>
       withCleanDb(db) { db =>
+        given AppConfig = db.config
         val seeded = seedAccessGraph(db)
 
         for {
@@ -212,6 +219,7 @@ object AccessContractRepositoryIntegrationSuite
     "grant and extension lookup queries return the effective access inputs and delete removes them"
   ) { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
       val seeded = seedAccessGraph(db)
       val futureExpiry = Instant.parse("2026-04-01T00:00:00Z")
       val expiredAt = Instant.parse("2020-04-01T00:00:00Z")
@@ -295,6 +303,7 @@ object AccessContractRepositoryIntegrationSuite
     "temporary credential invalidation marks only active credentials as used"
   ) { db =>
     withCleanDb(db) { db =>
+      given AppConfig = db.config
       val seeded = seedAccessGraph(db)
       val now = Instant.parse("2026-05-01T00:10:00Z")
       val activeExpiry = Instant.parse("2026-05-01T00:20:00Z")
@@ -399,7 +408,7 @@ object AccessContractRepositoryIntegrationSuite
 
   private def seedAccessGraph(
       db: dbwatchdog.support.IntegrationDb
-  ) =
+  )(using AppConfig) =
     for {
       suffix <- cats.effect.IO(UUID.randomUUID().toString.take(8))
       team <- db.transact(teamRepo.create(s"team-$suffix"))

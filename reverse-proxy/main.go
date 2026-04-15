@@ -32,6 +32,12 @@ func main() {
 		Level: slog.LevelDebug,
 	})))
 
+	technicalCredentialsKey, err := loadTechnicalCredentialsKey()
+	if err != nil {
+		slog.Error("missing technical credentials key", "err", err)
+		os.Exit(1)
+	}
+
 	systemDBPool, err := pgxpool.New(ctx, systemDBDSN())
 	if err != nil {
 		slog.Error("failed to connect to system db", "err", err)
@@ -51,7 +57,11 @@ func main() {
 	}
 
 	handler := postgres.NewHandler(tlsConfig)
-	store := systemdb.NewStore(systemDBPool)
+	store, err := systemdb.NewStore(systemDBPool, technicalCredentialsKey)
+	if err != nil {
+		slog.Error("failed to initialize system db store", "err", err)
+		os.Exit(1)
+	}
 
 	listener, err := net.Listen("tcp", ":5432")
 	if err != nil {
@@ -200,4 +210,13 @@ func systemDBDSN() string {
 	}
 
 	return defaultSystemDBDSN
+}
+
+func loadTechnicalCredentialsKey() (string, error) {
+	value := os.Getenv("TECHNICAL_CREDENTIALS_KEY")
+	if value == "" {
+		return "", systemdb.ErrMissingTechnicalCredentialsKey
+	}
+
+	return value, nil
 }

@@ -5,11 +5,13 @@ import cats.effect.{IO, Resource}
 import doobie.ConnectionIO
 import doobie.Transactor
 import doobie.implicits.*
+import fly4s.data.MigrationVersion
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import weaver.Expectations
 import weaver.IOSuite
 
+import dbwatchdog.AppResources
 import dbwatchdog.config.AppConfig
 import dbwatchdog.database.Migration
 
@@ -49,10 +51,26 @@ final case class IntegrationDb(
         WHERE table_schema = 'public' AND table_name = $tableName
       )
     """.query[Boolean].unique.transact(xa)
+
+  def columnExists(tableName: String, columnName: String): IO[Boolean] =
+    sql"""
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = $tableName
+          AND column_name = $columnName
+      )
+    """.query[Boolean].unique.transact(xa)
 }
 
 object IntegrationDb {
   def resource: Resource[IO, IntegrationDb] =
+    resource(targetVersion = None)
+
+  def resource(
+      targetVersion: Option[MigrationVersion]
+  ): Resource[IO, IntegrationDb] =
     for {
       container <- postgresContainer
       resetLock <- Resource.eval(Semaphore[IO](1))
@@ -76,26 +94,17 @@ object IntegrationDb {
         otp = AppConfig.OtpConfig(
           ttlSeconds = 300,
           randomBytes = 18
+        ),
+        credentialEncryption = AppConfig.CredentialEncryptionConfig(
+          key = Some("integration-technical-credentials-key"),
+          sessionSetting = "app.technical_credentials_key"
         )
       )
       _ <- Resource.eval {
         given AppConfig = config
-        Migration.migrate.void
+        Migration.migrate(targetVersion).void
       }
-      xa <- Resource.pure[IO, Transactor[IO]](
-        {
-          val properties = java.util.Properties()
-          properties.setProperty("user", config.db.user)
-          properties.setProperty("password", config.db.password)
-
-          Transactor.fromDriverManager[IO](
-            "org.postgresql.Driver",
-            config.db.url,
-            properties,
-            None
-          )
-        }
-      )
+      xa <- AppResources.makePostgresTransactor(config)
     } yield IntegrationDb(xa = xa, config = config, resetLock = resetLock)
 
   private def postgresContainer: Resource[IO, ScalaPostgresContainer] =

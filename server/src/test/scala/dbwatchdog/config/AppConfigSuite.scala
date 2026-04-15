@@ -32,6 +32,10 @@ object AppConfigSuite extends SimpleIOSuite {
         |  ttl-seconds = 300
         |  random-bytes = 18
         |}
+        |credential-encryption {
+        |  key = "test-key"
+        |  session-setting = "app.technical_credentials_key"
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
@@ -43,6 +47,12 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(loaded.exists(_.otp.ttlSeconds == 300L)) and
         expect(
           loaded.exists(_.keycloak.authorizedParty == "db-watchdog-frontend")
+        ) and
+        expect(
+          loaded.exists(
+            _.credentialEncryption.sessionSetting ==
+              "app.technical_credentials_key"
+          )
         )
     )
   }
@@ -71,6 +81,10 @@ object AppConfigSuite extends SimpleIOSuite {
         |  ttl-seconds = 300
         |  random-bytes = 18
         |}
+        |credential-encryption {
+        |  key = "test-key"
+        |  session-setting = "app.technical_credentials_key"
+        |}
         |""".stripMargin)
       .load[AppConfig]
 
@@ -78,7 +92,10 @@ object AppConfigSuite extends SimpleIOSuite {
   }
 
   test("AppConfig.load reads the default application config") {
-    val loaded = AppConfig.load
+    val loaded = AppConfig.loadWithEnvironment {
+      case "TECHNICAL_CREDENTIALS_KEY" => Some("test-key")
+      case _                           => None
+    }
 
     IO.pure(
       expect(loaded.server.host == "localhost") and
@@ -88,7 +105,49 @@ object AppConfigSuite extends SimpleIOSuite {
         expect(
           loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog"
         ) and
-        expect(loaded.otp.randomBytes == 18)
+        expect(loaded.otp.randomBytes == 18) and
+        expect(loaded.credentialEncryption.requiredKey == "test-key")
     )
+  }
+
+  test(
+    "AppConfig.loadWithEnvironment fails when TECHNICAL_CREDENTIALS_KEY is missing"
+  ) {
+    IO {
+      val threw =
+        try {
+          AppConfig
+            .loadWithEnvironment(_ => None)
+            .credentialEncryption
+            .requiredKey
+          false
+        } catch {
+          case _: IllegalStateException => true
+        }
+
+      expect(threw)
+    }
+  }
+
+  test(
+    "AppConfig.loadWithEnvironment fails when TECHNICAL_CREDENTIALS_KEY is blank"
+  ) {
+    IO {
+      val threw =
+        try {
+          AppConfig
+            .loadWithEnvironment {
+              case "TECHNICAL_CREDENTIALS_KEY" => Some("   ")
+              case _                           => None
+            }
+            .credentialEncryption
+            .requiredKey
+          false
+        } catch {
+          case _: IllegalStateException => true
+        }
+
+      expect(threw)
+    }
   }
 }
