@@ -19,9 +19,16 @@ test("validates the browser + proxy end-to-end flow", async ({ browser, baseURL 
     ).toBeVisible()
 
     await upsertDatabase(adminPage)
-    await ensureEngineeringGrant(adminPage)
 
     await loginViaKeycloak(userPage, REGULAR_USER, `${baseURL}/`)
+    await expect(
+      userPage.getByRole("heading", { name: "No databases available" })
+    ).toBeVisible()
+
+    await ensureEngineeringGrant(adminPage)
+    await userPage.reload()
+    await userPage.waitForLoadState("networkidle")
+
     const accessCard = await expectAccessCard(userPage, TEST_DATABASE.databaseName)
 
     await accessCard.getByRole("button", { name: "Generate OTP" }).click()

@@ -47,11 +47,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y sbt
 
+      - name: Cache sbt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ivy2/cache
+            ~/.sbt
+            ~/.cache/coursier
+          key: e2e-sbt-${{ runner.os }}-${{ hashFiles('server/build.sbt', 'server/project/**/*.scala', 'server/project/**/*.sbt') }}
+          restore-keys: |
+            e2e-sbt-${{ runner.os }}-
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.25"
           cache: true
+          cache-dependency-path: reverse-proxy/go.sum
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -73,6 +85,14 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm --dir ui install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: e2e-playwright-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            e2e-playwright-${{ runner.os }}-
 
       - name: Install Playwright browser
         run: pnpm --dir ui exec playwright install --with-deps chromium
