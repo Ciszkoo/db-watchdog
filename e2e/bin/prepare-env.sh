@@ -6,16 +6,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="${ROOT_DIR}/.e2e-tmp"
 LOG_DIR="${TMP_DIR}/logs"
 PID_DIR="${TMP_DIR}/pids"
+CERT_DIR="${TMP_DIR}/certs"
 
 TECHNICAL_CREDENTIALS_KEY="${TECHNICAL_CREDENTIALS_KEY:-dev-only-technical-credentials-key}"
-PROXY_TLS_CERT_FILE="${PROXY_TLS_CERT_FILE:-${ROOT_DIR}/certs/proxy.crt}"
-PROXY_TLS_KEY_FILE="${PROXY_TLS_KEY_FILE:-${ROOT_DIR}/certs/proxy.key}"
+DEFAULT_PROXY_TLS_CERT_FILE="${ROOT_DIR}/certs/proxy.crt"
+DEFAULT_PROXY_TLS_KEY_FILE="${ROOT_DIR}/certs/proxy.key"
+PROXY_TLS_CERT_FILE="${PROXY_TLS_CERT_FILE:-${DEFAULT_PROXY_TLS_CERT_FILE}}"
+PROXY_TLS_KEY_FILE="${PROXY_TLS_KEY_FILE:-${DEFAULT_PROXY_TLS_KEY_FILE}}"
 APP_URL="${APP_URL:-http://localhost:5173}"
 SERVER_HEALTH_URL="${SERVER_HEALTH_URL:-http://localhost:8080/api/v1/health}"
 KEYCLOAK_REALM_URL="${KEYCLOAK_REALM_URL:-http://localhost:8180/realms/db-watchdog}"
 TEST_DATABASE_NAME="${TEST_DATABASE_NAME:-playwright_ui_proxy_e2e}"
 
-mkdir -p "${LOG_DIR}" "${PID_DIR}"
+mkdir -p "${LOG_DIR}" "${PID_DIR}" "${CERT_DIR}"
 bash "${ROOT_DIR}/e2e/bin/cleanup-env.sh" >/dev/null 2>&1 || true
 
 require_command() {
@@ -60,6 +63,37 @@ wait_for_tcp() {
   exit 1
 }
 
+ensure_proxy_tls_files() {
+  if [[ -f "${PROXY_TLS_CERT_FILE}" && -f "${PROXY_TLS_KEY_FILE}" ]]; then
+    return 0
+  fi
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "Missing required command for generated proxy TLS material: openssl" >&2
+    exit 1
+  fi
+
+  PROXY_TLS_CERT_FILE="${CERT_DIR}/proxy.crt"
+  PROXY_TLS_KEY_FILE="${CERT_DIR}/proxy.key"
+
+  if [[ -f "${PROXY_TLS_CERT_FILE}" && -f "${PROXY_TLS_KEY_FILE}" ]]; then
+    return 0
+  fi
+
+  echo "Generating temporary proxy TLS certificate"
+  openssl req \
+    -x509 \
+    -newkey rsa:2048 \
+    -sha256 \
+    -nodes \
+    -days 1 \
+    -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+    -keyout "${PROXY_TLS_KEY_FILE}" \
+    -out "${PROXY_TLS_CERT_FILE}" \
+    >/dev/null 2>&1
+}
+
 start_if_needed() {
   local pid_file="$1"
   local wait_kind="$2"
@@ -100,6 +134,8 @@ require_command pnpm
 require_command go
 require_command sbt
 require_command setsid
+
+ensure_proxy_tls_files
 
 echo "Starting docker dependencies"
 (
