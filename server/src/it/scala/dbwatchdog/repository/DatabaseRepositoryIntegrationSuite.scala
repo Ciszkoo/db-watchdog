@@ -275,9 +275,9 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
   )(run: ConnectionIO[A]): ConnectionIO[A] =
     for {
       _ <- sql"""
-        SELECT set_config(${db.config.credentialEncryption.sessionSetting}, $currentKey, false),
+        SELECT set_config(${AppConfig.technicalCredentialsSessionSetting}, $currentKey, false),
                set_config(
-                 ${db.config.credentialEncryption.previousSessionSetting},
+                 ${AppConfig.technicalCredentialsPreviousSessionSetting},
                  ${previousKey.getOrElse("")},
                  false
                )

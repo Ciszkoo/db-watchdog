@@ -2,6 +2,7 @@ DO $migration$
 DECLARE
     schema_name TEXT := current_schema();
     pgcrypto_schema_name TEXT;
+    decrypt_failure_sqlstate TEXT := '39000';
 BEGIN
     SELECT namespace.nspname
     INTO pgcrypto_schema_name
@@ -28,7 +29,7 @@ BEGIN
                 BEGIN
                     RETURN %2$I.pgp_sym_decrypt(ciphertext, current_key)::TEXT;
                 EXCEPTION
-                    WHEN OTHERS THEN NULL;
+                    WHEN SQLSTATE '%3$s' THEN NULL;
                 END;
             END IF;
 
@@ -36,7 +37,7 @@ BEGIN
                 BEGIN
                     RETURN %2$I.pgp_sym_decrypt(ciphertext, previous_key)::TEXT;
                 EXCEPTION
-                    WHEN OTHERS THEN
+                    WHEN SQLSTATE '%3$s' THEN
                         RAISE EXCEPTION 'Technical credentials could not be decrypted with current or previous key';
                 END;
             END IF;
@@ -46,7 +47,8 @@ BEGIN
         $body$;
         $function$,
         schema_name,
-        pgcrypto_schema_name
+        pgcrypto_schema_name,
+        decrypt_failure_sqlstate
     );
 
     EXECUTE format(
@@ -80,7 +82,7 @@ BEGIN
                     PERFORM %2$I.pgp_sym_decrypt(ciphertext, current_key)::TEXT;
                     RETURN FALSE;
                 EXCEPTION
-                    WHEN OTHERS THEN NULL;
+                    WHEN SQLSTATE '%3$s' THEN NULL;
                 END;
             END IF;
 
@@ -89,7 +91,7 @@ BEGIN
                     PERFORM %2$I.pgp_sym_decrypt(ciphertext, previous_key)::TEXT;
                     RETURN TRUE;
                 EXCEPTION
-                    WHEN OTHERS THEN
+                    WHEN SQLSTATE '%3$s' THEN
                         RAISE EXCEPTION 'Technical credentials could not be decrypted with current or previous key';
                 END;
             END IF;
@@ -99,7 +101,8 @@ BEGIN
         $body$;
         $function$,
         schema_name,
-        pgcrypto_schema_name
+        pgcrypto_schema_name,
+        decrypt_failure_sqlstate
     );
 
     EXECUTE format(

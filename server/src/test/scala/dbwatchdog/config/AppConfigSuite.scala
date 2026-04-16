@@ -56,8 +56,6 @@ object AppConfigSuite extends SimpleIOSuite {
         |credential-encryption {
         |  key = "test-key"
         |  previous-key = "old-key"
-        |  session-setting = "app.technical_credentials_key"
-        |  previous-session-setting = "app.previous_technical_credentials_key"
         |}
         |""".stripMargin)
       .load[AppConfig]
@@ -73,19 +71,7 @@ object AppConfigSuite extends SimpleIOSuite {
         ) and
         expect(
           loaded.exists(
-            _.credentialEncryption.sessionSetting ==
-              "app.technical_credentials_key"
-          )
-        ) and
-        expect(
-          loaded.exists(
             _.credentialEncryption.previousKey.contains("old-key")
-          )
-        ) and
-        expect(
-          loaded.exists(
-            _.credentialEncryption.previousSessionSetting ==
-              "app.previous_technical_credentials_key"
           )
         )
     )
@@ -118,8 +104,6 @@ object AppConfigSuite extends SimpleIOSuite {
         |credential-encryption {
         |  key = "test-key"
         |  previous-key = "old-key"
-        |  session-setting = "app.technical_credentials_key"
-        |  previous-session-setting = "app.previous_technical_credentials_key"
         |}
         |""".stripMargin)
       .load[AppConfig]
@@ -174,17 +158,23 @@ object AppConfigSuite extends SimpleIOSuite {
   test("session init SQL configures current and previous credential settings") {
     val config = AppConfig.CredentialEncryptionConfig(
       key = Some("current-key"),
-      previousKey = Some("old-key"),
-      sessionSetting = "app.technical_credentials_key",
-      previousSessionSetting = "app.previous_technical_credentials_key"
+      previousKey = Some("old-key")
     )
 
     IO.pure(
       expect(
-        config.sessionInitSql.contains(
-          "set_config('app.technical_credentials_key', 'current-key', false)"
-        )
+        AppConfig.technicalCredentialsSessionSetting ==
+          "app.technical_credentials_key"
       ) and
+        expect(
+          AppConfig.technicalCredentialsPreviousSessionSetting ==
+            "app.previous_technical_credentials_key"
+        ) and
+        expect(
+          config.sessionInitSql.contains(
+            "set_config('app.technical_credentials_key', 'current-key', false)"
+          )
+        ) and
         expect(
           config.sessionInitSql.contains(
             "set_config('app.previous_technical_credentials_key', 'old-key', false)"

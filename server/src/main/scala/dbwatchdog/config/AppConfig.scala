@@ -22,6 +22,9 @@ object AppConfig {
   private val technicalCredentialsPreviousKeyEnvVar =
     "TECHNICAL_CREDENTIALS_PREVIOUS_KEY"
   private val localHosts = Set("localhost", "127.0.0.1", "::1")
+  val technicalCredentialsSessionSetting = "app.technical_credentials_key"
+  val technicalCredentialsPreviousSessionSetting =
+    "app.previous_technical_credentials_key"
 
   def load: AppConfig =
     loadWithEnvironment(sys.env.get)
@@ -79,9 +82,7 @@ object AppConfig {
 
   case class CredentialEncryptionConfig(
       key: Option[String],
-      previousKey: Option[String],
-      sessionSetting: String,
-      previousSessionSetting: String
+      previousKey: Option[String]
   ) {
     private def nonBlank(value: String): Boolean = value.trim.nonEmpty
 
@@ -109,7 +110,7 @@ object AppConfig {
       previousKey.filter(nonBlank)
 
     def sessionInitSql: String =
-      s"SELECT ${sessionSettingSql(sessionSetting, requiredKey)}, ${sessionSettingSql(previousSessionSetting, normalizedPreviousKey.getOrElse(""))}"
+      s"SELECT ${sessionSettingSql(technicalCredentialsSessionSetting, requiredKey)}, ${sessionSettingSql(technicalCredentialsPreviousSessionSetting, normalizedPreviousKey.getOrElse(""))}"
 
     private def sessionSettingSql(
         settingName: String,

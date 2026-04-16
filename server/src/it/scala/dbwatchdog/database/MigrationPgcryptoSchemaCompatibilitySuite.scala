@@ -180,9 +180,7 @@ object MigrationPgcryptoSchemaCompatibilitySuite extends IOSuite {
       ),
       credentialEncryption = AppConfig.CredentialEncryptionConfig(
         key = Some(currentKey),
-        previousKey = None,
-        sessionSetting = "app.technical_credentials_key",
-        previousSessionSetting = "app.previous_technical_credentials_key"
+        previousKey = None
       )
     )
 
@@ -216,9 +214,9 @@ object MigrationPgcryptoSchemaCompatibilitySuite extends IOSuite {
   )(run: ConnectionIO[A]): ConnectionIO[A] =
     for {
       _ <- sql"""
-        SELECT set_config(${db.config.credentialEncryption.sessionSetting}, $currentKey, false),
+        SELECT set_config(${AppConfig.technicalCredentialsSessionSetting}, $currentKey, false),
                set_config(
-                 ${db.config.credentialEncryption.previousSessionSetting},
+                 ${AppConfig.technicalCredentialsPreviousSessionSetting},
                  ${previousKey.getOrElse("")},
                  false
                )

@@ -5,6 +5,7 @@ import doobie.ConnectionIO
 import doobie.implicits.*
 import doobie.postgres.implicits.*
 
+import dbwatchdog.config.AppConfig
 import dbwatchdog.support.{IntegrationDb, PostgresIntegrationSuite}
 import weaver.Expectations
 
@@ -67,8 +68,8 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
         decrypted <- db.transact(
           sql"""
               WITH configured_session AS (
-                SELECT set_config('app.technical_credentials_key', $currentKey, false),
-                       set_config('app.previous_technical_credentials_key', '', false)
+                SELECT set_config(${AppConfig.technicalCredentialsSessionSetting}, $currentKey, false),
+                       set_config(${AppConfig.technicalCredentialsPreviousSessionSetting}, '', false)
               )
               SELECT decrypt_technical_password(
                 technical_password_ciphertext,
@@ -129,6 +130,42 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
     }
   }
 
+  test("rotation helpers raise a clear error when neither key decrypts a row") {
+    db =>
+      withCleanDb(db) { db =>
+        for {
+          databaseId <- db.transact(
+            insertEncryptedDatabase(
+              databaseName = "undecryptable_helper_db",
+              technicalPassword = "previous-secret",
+              encryptionKey = previousKey
+            )
+          )
+          result <- db
+            .transact(
+              withCredentialSettings(
+                db,
+                currentKey,
+                Some("wrong-fallback-key")
+              ) {
+                sql"""
+                  SELECT decrypt_technical_password(technical_password_ciphertext)
+                  FROM databases
+                  WHERE id = $databaseId
+                """.query[String].unique
+              }
+            )
+            .attempt
+        } yield expect(
+          result.left.exists(
+            _.getMessage.contains(
+              "Technical credentials could not be decrypted with current or previous key"
+            )
+          )
+        )
+      }
+  }
+
   private def assertRequiredTables(db: IntegrationDb): IO[Expectations] =
     for {
       users <- db.tableExists("users")
@@ -157,9 +194,9 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
   )(run: ConnectionIO[A]): ConnectionIO[A] =
     for {
       _ <- sql"""
-        SELECT set_config(${db.config.credentialEncryption.sessionSetting}, $currentKey, false),
+        SELECT set_config(${AppConfig.technicalCredentialsSessionSetting}, $currentKey, false),
                set_config(
-                 ${db.config.credentialEncryption.previousSessionSetting},
+                 ${AppConfig.technicalCredentialsPreviousSessionSetting},
                  ${previousKey.getOrElse("")},
                  false
                )

@@ -55,9 +55,7 @@ object AccessServiceSuite extends SimpleIOSuite {
     ),
     credentialEncryption = AppConfig.CredentialEncryptionConfig(
       key = Some("test-technical-credentials-key"),
-      previousKey = None,
-      sessionSetting = "app.technical_credentials_key",
-      previousSessionSetting = "app.previous_technical_credentials_key"
+      previousKey = None
     )
   )
 
