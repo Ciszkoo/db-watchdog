@@ -52,19 +52,20 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
       }
   }
 
-  test("rotation helper overload decrypts correctly inside a single statement") {
-    db =>
-      withCleanDb(db) { db =>
-        for {
-          databaseId <- db.transact(
-            insertEncryptedDatabase(
-              databaseName = "single_statement_helper_db",
-              technicalPassword = "single-secret",
-              encryptionKey = currentKey
-            )
+  test(
+    "rotation helper overload decrypts correctly inside a single statement"
+  ) { db =>
+    withCleanDb(db) { db =>
+      for {
+        databaseId <- db.transact(
+          insertEncryptedDatabase(
+            databaseName = "single_statement_helper_db",
+            technicalPassword = "single-secret",
+            encryptionKey = currentKey
           )
-          decrypted <- db.transact(
-            sql"""
+        )
+        decrypted <- db.transact(
+          sql"""
               WITH configured_session AS (
                 SELECT set_config('app.technical_credentials_key', $currentKey, false),
                        set_config('app.previous_technical_credentials_key', '', false)
@@ -77,9 +78,9 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
               FROM databases, configured_session
               WHERE id = $databaseId
             """.query[String].unique
-          )
-        } yield expect(decrypted == "single-secret")
-      }
+        )
+      } yield expect(decrypted == "single-secret")
+    }
   }
 
   test(
