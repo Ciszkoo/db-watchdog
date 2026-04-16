@@ -18,6 +18,7 @@ Common targets:
 - `make server-run`
 - `make ui-dev`
 - `make proxy-run`
+- `make e2e-test`
 - `make build`
 - `make check`
 
@@ -169,6 +170,32 @@ If a database has been deactivated, previously issued but unused OTPs for that d
 
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
 
+## End-to-End Validation
+
+The repository now includes one browser-driven end-to-end scenario that crosses the real local stack:
+
+- Keycloak login
+- React UI administration and user dashboard flows
+- Scala backend APIs
+- Go reverse proxy
+- recorded PostgreSQL proxy sessions
+
+Local requirements:
+
+- Docker
+- `psql`
+- Go
+- `sbt`
+- `pnpm`
+
+Run it from the repository root:
+
+```bash
+make e2e-test
+```
+
+The runner starts or reuses the local dependencies it needs, keeps temporary logs and PID files under `.e2e-tmp/`, and leaves Docker containers running locally after the test finishes. In CI, the dedicated E2E workflow performs the heavier `docker compose down -v` cleanup separately.
+
 ## Validation
 
 ### Backend
@@ -247,5 +274,5 @@ The frontend development client includes a backend audience mapper so the backen
 - The backend has a validated auth boundary, token-derived user sync, administrative access APIs, read/write access-state management, effective-access resolution, OTP issuance, and admin session review.
 - The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, records session start/end metadata, and rejects inactive-database OTP consumption through the same generic auth failure path.
 - The frontend now includes both the end-user OTP workflow and an operable `DBA` admin console for database registration, editing, reversible deactivation, access-state review, and session review.
-- Hard delete flows, session filtering/pagination, key rotation, and Playwright end-to-end coverage remain deferred.
+- Hard delete flows, session filtering/pagination, credential-key rotation, and broader end-to-end coverage remain deferred.
 - The repository includes local certificates under `certs/` for development use.
