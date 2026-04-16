@@ -1,10 +1,9 @@
 package dbwatchdog.config
 
-import com.comcast.ip4s.{Host, Port}
-
 import java.net.URI
 import java.util.Locale
 
+import com.comcast.ip4s.{Host, Port}
 import pureconfig.{ConfigReader, ConfigSource}
 
 case class AppConfig(
