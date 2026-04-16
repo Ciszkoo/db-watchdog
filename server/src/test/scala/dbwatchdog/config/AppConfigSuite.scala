@@ -17,6 +17,11 @@ object AppConfigSuite extends SimpleIOSuite {
     jwksUrl = "http://127.0.0.1:8180/jwks"
   )
 
+  private val localIpv6HttpKeycloak = secureKeycloak.copy(
+    issuer = "http://[::1]:8180/realms/db-watchdog",
+    jwksUrl = "http://[::1]:8180/jwks"
+  )
+
   private val remoteHttpKeycloak = secureKeycloak.copy(
     issuer = "http://keycloak.internal.example.test/realms/db-watchdog",
     jwksUrl = "http://example.test/jwks"
@@ -173,6 +178,19 @@ object AppConfigSuite extends SimpleIOSuite {
 
   test("local http Keycloak endpoints generate local-dev-only warnings") {
     val warnings = localHttpKeycloak.transportSecurityWarnings
+
+    IO.pure(
+      expect(warnings.length == 2) and
+        expect(
+          warnings.forall(_.contains("acceptable only for local development"))
+        ) and
+        expect(warnings.exists(_.contains("keycloak.issuer"))) and
+        expect(warnings.exists(_.contains("keycloak.jwks-url")))
+    )
+  }
+
+  test("local IPv6 http Keycloak endpoints generate local-dev-only warnings") {
+    val warnings = localIpv6HttpKeycloak.transportSecurityWarnings
 
     IO.pure(
       expect(warnings.length == 2) and

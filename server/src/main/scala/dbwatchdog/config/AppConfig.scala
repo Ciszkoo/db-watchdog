@@ -126,7 +126,14 @@ object AppConfig {
   private def isLocalHost(uriValue: String): Boolean =
     parseUri(uriValue)
       .flatMap(uri => Option(uri.getHost))
-      .exists(host => localHosts.contains(host.toLowerCase(Locale.ROOT)))
+      .map(normalizeHost)
+      .exists(localHosts.contains)
+
+  private def normalizeHost(host: String): String =
+    host
+      .stripPrefix("[")
+      .stripSuffix("]")
+      .toLowerCase(Locale.ROOT)
 
   private def parseUri(uriValue: String): Option[URI] =
     try {
