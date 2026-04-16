@@ -5,6 +5,22 @@ import pureconfig.ConfigSource
 import weaver.SimpleIOSuite
 
 object AppConfigSuite extends SimpleIOSuite {
+  private val secureKeycloak = AppConfig.KeycloakConfig(
+    issuer = "https://issuer.example.test/realms/db-watchdog",
+    jwksUrl = "https://issuer.example.test/jwks",
+    audience = "db-watchdog-backend",
+    authorizedParty = "db-watchdog-frontend"
+  )
+
+  private val localHttpKeycloak = secureKeycloak.copy(
+    issuer = "http://localhost:8180/realms/db-watchdog",
+    jwksUrl = "http://127.0.0.1:8180/jwks"
+  )
+
+  private val remoteHttpKeycloak = secureKeycloak.copy(
+    issuer = "http://keycloak.internal.example.test/realms/db-watchdog",
+    jwksUrl = "http://example.test/jwks"
+  )
 
   test("loads a complete config from HOCON") {
     val loaded = ConfigSource
@@ -149,5 +165,37 @@ object AppConfigSuite extends SimpleIOSuite {
 
       expect(threw)
     }
+  }
+
+  test("https Keycloak endpoints do not generate transport warnings") {
+    IO.pure(expect(secureKeycloak.transportSecurityWarnings.isEmpty))
+  }
+
+  test("local http Keycloak endpoints generate local-dev-only warnings") {
+    val warnings = localHttpKeycloak.transportSecurityWarnings
+
+    IO.pure(
+      expect(warnings.length == 2) and
+        expect(
+          warnings.forall(_.contains("acceptable only for local development"))
+        ) and
+        expect(warnings.exists(_.contains("keycloak.issuer"))) and
+        expect(warnings.exists(_.contains("keycloak.jwks-url")))
+    )
+  }
+
+  test("non-local http Keycloak endpoints generate deployment warnings") {
+    val warnings = remoteHttpKeycloak.transportSecurityWarnings
+
+    IO.pure(
+      expect(warnings.length == 2) and
+        expect(
+          warnings.forall(
+            _.contains("not acceptable outside local development")
+          )
+        ) and
+        expect(warnings.exists(_.contains("keycloak.issuer"))) and
+        expect(warnings.exists(_.contains("keycloak.jwks-url")))
+    )
   }
 }
