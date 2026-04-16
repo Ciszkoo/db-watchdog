@@ -22,6 +22,7 @@ PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/proxy.key
 	proxy-run proxy-test proxy-build proxy-check \
 	server-run server-scalafix server-format server-format-check server-test server-it-test server-coverage server-compile server-check \
 	ui-dev ui-start ui-lint ui-lint-fix ui-typecheck ui-test ui-build ui-check \
+	e2e-test \
 	build check
 
 help: ## Show available root targets.
@@ -106,6 +107,9 @@ ui-build: require-pnpm ## Build the frontend.
 	cd "$(UI_DIR)" && $(PNPM) build
 
 ui-check: ui-lint ui-typecheck ui-test ui-build ## Validate the frontend module.
+
+e2e-test: ## Run the browser + proxy end-to-end validation flow.
+	bash e2e/bin/run.sh
 
 build: proxy-build server-compile ui-build ## Build every application module.
 

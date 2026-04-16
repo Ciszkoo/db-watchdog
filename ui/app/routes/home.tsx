@@ -363,7 +363,7 @@ function DatabaseAccessCard({
   }
 
   return (
-    <Card>
+    <Card data-testid={`database-access-card-${access.databaseId}`}>
       <CardHeader className="gap-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -427,7 +427,10 @@ function OtpDetails({
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-teal-800">
           One-time password
         </p>
-        <p className="mt-3 break-all font-mono text-2xl font-semibold text-stone-950">
+        <p
+          className="mt-3 break-all font-mono text-2xl font-semibold text-stone-950"
+          data-testid={`database-otp-value-${issuedOtp.database.id}`}
+        >
           {issuedOtp.otp}
         </p>
         <p className="mt-3 text-sm text-stone-700">

@@ -1,0 +1,95 @@
+name: E2E CI
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "ui/**"
+      - "server/**"
+      - "reverse-proxy/**"
+      - "e2e/**"
+      - "docker/**"
+      - "docker-compose.yml"
+      - "Makefile"
+      - "README.md"
+      - ".github/workflows/e2e-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "ui/**"
+      - "server/**"
+      - "reverse-proxy/**"
+      - "e2e/**"
+      - "docker/**"
+      - "docker-compose.yml"
+      - "Makefile"
+      - "README.md"
+      - ".github/workflows/e2e-ci.yml"
+
+jobs:
+  browser-proxy-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install sbt
+        run: |
+          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
+          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y sbt
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --dir ui exec playwright install --with-deps chromium
+
+      - name: Run browser + proxy E2E
+        run: make e2e-test
+
+      - name: Print E2E logs on failure
+        if: failure()
+        run: |
+          if [ -d .e2e-tmp ]; then
+            find .e2e-tmp -maxdepth 2 -type f | sort | while read -r file; do
+              echo "===== ${file} ====="
+              cat "${file}"
+            done
+          fi
+
+      - name: Cleanup docker environment
+        if: always()
+        run: docker compose down -v
