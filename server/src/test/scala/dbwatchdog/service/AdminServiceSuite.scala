@@ -10,6 +10,7 @@ import doobie.ConnectionIO
 import doobie.free.connection.ConnectionOp
 import weaver.SimpleIOSuite
 
+import dbwatchdog.config.AppConfig
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
   AdminTeamDatabaseGrantResponse,
@@ -20,6 +21,7 @@ import dbwatchdog.domain.{
   DatabaseSession,
   Team,
   TeamDatabaseGrant,
+  TechnicalCredentialRewrapResponse,
   UpdateDatabase,
   UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantInput,
@@ -33,6 +35,32 @@ import dbwatchdog.repository.*
 object AdminServiceSuite extends SimpleIOSuite {
   private val createdAt = Instant.parse("2024-01-01T00:00:00Z")
   private val updatedAt = Instant.parse("2024-01-02T00:00:00Z")
+  private val baseAppConfig = AppConfig(
+    server = AppConfig.ServerConfig("127.0.0.1", 8080),
+    db = AppConfig.DatabaseConfig(
+      host = "localhost",
+      port = 5432,
+      user = "postgres",
+      password = "password",
+      schema = "public",
+      threadPoolSize = 2
+    ),
+    keycloak = AppConfig.KeycloakConfig(
+      issuer = "https://issuer.example.test/realms/db-watchdog",
+      jwksUrl = "https://issuer.example.test/jwks",
+      audience = "db-watchdog-backend",
+      authorizedParty = "db-watchdog-frontend"
+    ),
+    otp = AppConfig.OtpConfig(
+      ttlSeconds = 300,
+      randomBytes = 18
+    ),
+    credentialEncryption = AppConfig.CredentialEncryptionConfig(
+      key = Some("current-technical-credentials-key"),
+      previousKey = None
+    )
+  )
+  private given AppConfig = baseAppConfig
 
   private val team = Team(
     id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -431,6 +459,101 @@ object AdminServiceSuite extends SimpleIOSuite {
       expect(!extensionUpsertCalled)
   }
 
+  test("rewrapTechnicalCredentials returns the rotated row count") {
+    given AppConfig = baseAppConfig.copy(
+      credentialEncryption = baseAppConfig.credentialEncryption.copy(
+        previousKey = Some("previous-technical-credentials-key")
+      )
+    )
+
+    var rewrapCalls = 0
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(
+          List(database),
+          onRewrap = () => {
+            rewrapCalls = rewrapCalls + 1
+            2
+          }
+        ),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      response <- service.rewrapTechnicalCredentials()
+    } yield expect(response == TechnicalCredentialRewrapResponse(2)) and
+      expect(rewrapCalls == 1)
+  }
+
+  test("rewrapTechnicalCredentials rejects a missing previous key") {
+    given AppConfig = baseAppConfig
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      result <- service.rewrapTechnicalCredentials().attempt
+    } yield expect(
+      result.left.exists {
+        case ServiceError.Conflict(message) =>
+          message.contains("TECHNICAL_CREDENTIALS_PREVIOUS_KEY")
+        case _ => false
+      }
+    )
+  }
+
+  test("rewrapTechnicalCredentials rejects when previous key matches current") {
+    given AppConfig = baseAppConfig.copy(
+      credentialEncryption = baseAppConfig.credentialEncryption.copy(
+        previousKey = Some("current-technical-credentials-key")
+      )
+    )
+
+    val service = AdminService.make(
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(Nil)
+      ),
+      db = pureDatabase
+    )
+
+    for {
+      result <- service.rewrapTechnicalCredentials().attempt
+    } yield expect(
+      result.left.exists {
+        case ServiceError.Conflict(message) =>
+          message.contains("TECHNICAL_CREDENTIALS_PREVIOUS_KEY")
+        case _ => false
+      }
+    )
+  }
+
   private val pureDatabase: Database = new Database {
     def transact[A](query: ConnectionIO[A]): IO[A] =
       query.foldMap(unexpectedConnectionOp)
@@ -501,7 +624,8 @@ object AdminServiceSuite extends SimpleIOSuite {
 
   private def stubDatabaseRepository(
       databases: List[PersistedDatabase],
-      onUpdate: (UUID, UpdateDatabase) => Unit = (_, _) => ()
+      onUpdate: (UUID, UpdateDatabase) => Unit = (_, _) => (),
+      onRewrap: () => Int = () => 0
   ): DatabaseRepository =
     new DatabaseRepository {
       override val tableName = "databases"
@@ -559,6 +683,9 @@ object AdminServiceSuite extends SimpleIOSuite {
           .liftTo[ConnectionIO](
             new IllegalStateException(s"Missing database $id")
           )
+
+      def rewrapTechnicalCredentials() =
+        onRewrap().pure[ConnectionIO]
 
       def list = databases.pure[ConnectionIO]
 

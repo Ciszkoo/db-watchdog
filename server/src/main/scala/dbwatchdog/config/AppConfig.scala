@@ -19,7 +19,12 @@ case class AppConfig(
 
 object AppConfig {
   private val technicalCredentialsKeyEnvVar = "TECHNICAL_CREDENTIALS_KEY"
+  private val technicalCredentialsPreviousKeyEnvVar =
+    "TECHNICAL_CREDENTIALS_PREVIOUS_KEY"
   private val localHosts = Set("localhost", "127.0.0.1", "::1")
+  val technicalCredentialsSessionSetting = "app.technical_credentials_key"
+  val technicalCredentialsPreviousSessionSetting =
+    "app.previous_technical_credentials_key"
 
   def load: AppConfig =
     loadWithEnvironment(sys.env.get)
@@ -30,8 +35,9 @@ object AppConfig {
     val loaded = ConfigSource.default.loadOrThrow[AppConfig]
 
     loaded.copy(
-      credentialEncryption = loaded.credentialEncryption.withFallbackKey(
-        environment(technicalCredentialsKeyEnvVar)
+      credentialEncryption = loaded.credentialEncryption.withFallbackKeys(
+        key = environment(technicalCredentialsKeyEnvVar),
+        previousKey = environment(technicalCredentialsPreviousKeyEnvVar)
       )
     )
   }
@@ -76,14 +82,20 @@ object AppConfig {
 
   case class CredentialEncryptionConfig(
       key: Option[String],
-      sessionSetting: String
+      previousKey: Option[String]
   ) {
     private def nonBlank(value: String): Boolean = value.trim.nonEmpty
 
-    def withFallbackKey(
-        fallbackKey: Option[String]
+    def withFallbackKeys(
+        key: Option[String],
+        previousKey: Option[String]
     ): CredentialEncryptionConfig =
-      copy(key = key.filter(nonBlank).orElse(fallbackKey.filter(nonBlank)))
+      copy(
+        key = this.key.filter(nonBlank).orElse(key.filter(nonBlank)),
+        previousKey = this.previousKey
+          .filter(nonBlank)
+          .orElse(previousKey.filter(nonBlank))
+      )
 
     def requiredKey: String =
       key
@@ -94,8 +106,17 @@ object AppConfig {
           )
         )
 
+    def normalizedPreviousKey: Option[String] =
+      previousKey.filter(nonBlank)
+
     def sessionInitSql: String =
-      s"SELECT set_config('${escapeSqlLiteral(sessionSetting)}', '${escapeSqlLiteral(requiredKey)}', false)"
+      s"SELECT ${sessionSettingSql(technicalCredentialsSessionSetting, requiredKey)}, ${sessionSettingSql(technicalCredentialsPreviousSessionSetting, normalizedPreviousKey.getOrElse(""))}"
+
+    private def sessionSettingSql(
+        settingName: String,
+        value: String
+    ): String =
+      s"set_config('${escapeSqlLiteral(settingName)}', '${escapeSqlLiteral(value)}', false)"
 
     private def escapeSqlLiteral(value: String): String =
       value.replace("'", "''")

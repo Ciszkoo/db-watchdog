@@ -97,7 +97,7 @@ object IntegrationDb {
         ),
         credentialEncryption = AppConfig.CredentialEncryptionConfig(
           key = Some("integration-technical-credentials-key"),
-          sessionSetting = "app.technical_credentials_key"
+          previousKey = None
         )
       )
       _ <- Resource.eval {

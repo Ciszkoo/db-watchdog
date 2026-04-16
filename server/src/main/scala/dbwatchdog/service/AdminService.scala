@@ -7,6 +7,7 @@ import cats.effect.IO
 import cats.implicits.*
 import doobie.ConnectionIO
 
+import dbwatchdog.config.AppConfig
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
   AdminDatabaseSessionResponse,
@@ -19,6 +20,7 @@ import dbwatchdog.domain.{
   DatabaseResponse,
   Team,
   TeamResponse,
+  TechnicalCredentialRewrapResponse,
   UpdateDatabase,
   UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantInput,
@@ -43,6 +45,7 @@ trait AdminService {
   ): IO[DatabaseResponse]
   def deactivateDatabase(databaseId: UUID): IO[DatabaseResponse]
   def reactivateDatabase(databaseId: UUID): IO[DatabaseResponse]
+  def rewrapTechnicalCredentials(): IO[TechnicalCredentialRewrapResponse]
   def upsertTeamDatabaseGrant(
       request: UpsertTeamDatabaseGrantRequest
   ): IO[Unit]
@@ -60,10 +63,13 @@ trait AdminService {
 }
 
 object AdminService {
+  private val technicalCredentialRewrapConflictMessage =
+    "Technical credential rewrap requires a distinct TECHNICAL_CREDENTIALS_PREVIOUS_KEY"
+
   def make(
       repos: Repositories,
       db: Database
-  ): AdminService =
+  )(using config: AppConfig): AdminService =
     new AdminService {
       def listTeams(): IO[List[TeamResponse]] =
         db.transact(
@@ -221,6 +227,16 @@ object AdminService {
           } yield DatabaseResponse.fromDomain(updated)
         )
 
+      def rewrapTechnicalCredentials(): IO[TechnicalCredentialRewrapResponse] =
+        requireDistinctPreviousTechnicalCredentialKey *>
+          db.transact(
+            repos.databases
+              .rewrapTechnicalCredentials()
+              .map(
+                TechnicalCredentialRewrapResponse.apply
+              )
+          )
+
       def upsertTeamDatabaseGrant(
           request: UpsertTeamDatabaseGrantRequest
       ): IO[Unit] =
@@ -332,6 +348,18 @@ object AdminService {
               )
               .raiseError[ConnectionIO, PersistedDatabase]
         }
+
+      private def requireDistinctPreviousTechnicalCredentialKey: IO[Unit] = {
+        val currentKey = config.credentialEncryption.requiredKey
+
+        config.credentialEncryption.normalizedPreviousKey
+          .filterNot(_ == currentKey)
+          .fold(
+            ServiceError
+              .Conflict(technicalCredentialRewrapConflictMessage)
+              .raiseError[IO, Unit]
+          )(_ => IO.unit)
+      }
 
       private def validateExpiry(
           expiresAt: Option[Instant],

@@ -153,6 +153,10 @@ object AdminDatabaseSessionResponse {
     )
 }
 
+final case class TechnicalCredentialRewrapResponse(
+    rotatedDatabaseCount: Int
+) derives ConfiguredCodec
+
 final case class CreateDatabaseRequest(
     engine: String,
     host: String,

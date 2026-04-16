@@ -19,7 +19,8 @@ var ErrMissingTechnicalCredentialsKey = errors.New("missing TECHNICAL_CREDENTIAL
 
 const consumeOTPQuery = `
 WITH configured_session AS (
-  SELECT set_config('app.technical_credentials_key', $4, false)
+  SELECT set_config('app.technical_credentials_key', $4, false),
+         set_config('app.previous_technical_credentials_key', $5, false)
 )
 UPDATE db_watchdog.temporary_access_credentials AS tac
 SET used_at = NOW(),
@@ -41,10 +42,11 @@ RETURNING tac.id,
           d.port,
           d.database_name,
           d.technical_user,
-          db_watchdog.pgp_sym_decrypt(
+          db_watchdog.decrypt_technical_password(
             d.technical_password_ciphertext,
-            current_setting('app.technical_credentials_key')
-          )::text
+            $4,
+            $5
+          )
 `
 
 const startSessionQuery = `
@@ -68,8 +70,9 @@ type db interface {
 }
 
 type Store struct {
-	db                      db
-	technicalCredentialsKey string
+	db                              db
+	technicalCredentialsKey         string
+	previousTechnicalCredentialsKey *string
 }
 
 type ConsumedCredential struct {
@@ -91,22 +94,28 @@ type StartSessionInput struct {
 	StartedAt    time.Time
 }
 
-func NewStore(pool *pgxpool.Pool, technicalCredentialsKey string) (*Store, error) {
-	return newStore(pool, technicalCredentialsKey)
+func NewStore(pool *pgxpool.Pool, technicalCredentialsKey string, previousTechnicalCredentialsKey string) (*Store, error) {
+	return newStore(pool, technicalCredentialsKey, previousTechnicalCredentialsKey)
 }
 
-func NewStoreWithDB(querier db, technicalCredentialsKey string) (*Store, error) {
-	return newStore(querier, technicalCredentialsKey)
+func NewStoreWithDB(querier db, technicalCredentialsKey string, previousTechnicalCredentialsKey string) (*Store, error) {
+	return newStore(querier, technicalCredentialsKey, previousTechnicalCredentialsKey)
 }
 
-func newStore(querier db, technicalCredentialsKey string) (*Store, error) {
+func newStore(querier db, technicalCredentialsKey string, previousTechnicalCredentialsKey string) (*Store, error) {
 	if strings.TrimSpace(technicalCredentialsKey) == "" {
 		return nil, ErrMissingTechnicalCredentialsKey
 	}
 
+	var normalizedPreviousKey *string
+	if strings.TrimSpace(previousTechnicalCredentialsKey) != "" {
+		normalizedPreviousKey = &previousTechnicalCredentialsKey
+	}
+
 	return &Store{
-		db:                      querier,
-		technicalCredentialsKey: technicalCredentialsKey,
+		db:                              querier,
+		technicalCredentialsKey:         technicalCredentialsKey,
+		previousTechnicalCredentialsKey: normalizedPreviousKey,
 	}, nil
 }
 
@@ -125,6 +134,7 @@ func (s *Store) ConsumeOTP(
 		loginIdentifier,
 		databaseName,
 		s.technicalCredentialsKey,
+		s.previousTechnicalCredentialsKeyValue(),
 	).Scan(
 		&credential.CredentialID,
 		&credential.UserID,
@@ -143,6 +153,14 @@ func (s *Store) ConsumeOTP(
 	}
 
 	return credential, nil
+}
+
+func (s *Store) previousTechnicalCredentialsKeyValue() string {
+	if s.previousTechnicalCredentialsKey == nil {
+		return ""
+	}
+
+	return *s.previousTechnicalCredentialsKey
 }
 
 func (s *Store) StartSession(

@@ -22,6 +22,7 @@ import dbwatchdog.domain.{
   CreateDatabaseRequest,
   DatabaseResponse,
   TeamResponse,
+  TechnicalCredentialRewrapResponse,
   UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
@@ -95,12 +96,14 @@ object AdminRoutesSuite extends SimpleIOSuite {
       )
       deactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
       reactivateCalls <- Ref.of[IO, Vector[UUID]](Vector.empty)
+      rewrapCalls <- Ref.of[IO, Int](0)
       updateResponse <- AdminRoutes
         .routes(
           recordingAdminService(
             updateCalls = updateCalls,
             deactivateCalls = deactivateCalls,
-            reactivateCalls = reactivateCalls
+            reactivateCalls = reactivateCalls,
+            rewrapCalls = rewrapCalls
           )
         )
         .orNotFound
@@ -124,7 +127,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
           recordingAdminService(
             updateCalls = updateCalls,
             deactivateCalls = deactivateCalls,
-            reactivateCalls = reactivateCalls
+            reactivateCalls = reactivateCalls,
+            rewrapCalls = rewrapCalls
           )
         )
         .orNotFound
@@ -139,7 +143,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
           recordingAdminService(
             updateCalls = updateCalls,
             deactivateCalls = deactivateCalls,
-            reactivateCalls = reactivateCalls
+            reactivateCalls = reactivateCalls,
+            rewrapCalls = rewrapCalls
           )
         )
         .orNotFound
@@ -149,15 +154,34 @@ object AdminRoutesSuite extends SimpleIOSuite {
             uri"/admin/databases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/reactivate"
           )
         )
+      rewrapResponse <- AdminRoutes
+        .routes(
+          recordingAdminService(
+            updateCalls = updateCalls,
+            deactivateCalls = deactivateCalls,
+            reactivateCalls = reactivateCalls,
+            rewrapCalls = rewrapCalls
+          )
+        )
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/technical-credentials/rewrap"
+          )
+        )
       observedUpdateCalls <- updateCalls.get
       observedDeactivateCalls <- deactivateCalls.get
       observedReactivateCalls <- reactivateCalls.get
+      observedRewrapCalls <- rewrapCalls.get
     } yield expect(updateResponse.status == Status.Forbidden) and
       expect(deactivateResponse.status == Status.Forbidden) and
       expect(reactivateResponse.status == Status.Forbidden) and
+      expect(rewrapResponse.status == Status.Forbidden) and
       expect(observedUpdateCalls.isEmpty) and
       expect(observedDeactivateCalls.isEmpty) and
-      expect(observedReactivateCalls.isEmpty)
+      expect(observedReactivateCalls.isEmpty) and
+      expect(observedRewrapCalls == 0)
   }
 
   test("DBA callers can list recorded sessions") {
@@ -365,6 +389,79 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(reactivateBody.contains("\"isActive\":true"))
   }
 
+  test("DBA callers can trigger technical credential rewrap") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    for {
+      rewrapCalls <- Ref.of[IO, Int](0)
+      response <- AdminRoutes
+        .routes(recordingAdminService(rewrapCalls = rewrapCalls))
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/technical-credentials/rewrap"
+          )
+        )
+      body <- response.bodyText.compile.string
+      observedRewrapCalls <- rewrapCalls.get
+    } yield expect(response.status == Status.Ok) and
+      expect(body.contains("\"rotatedDatabaseCount\":3")) and
+      expect(observedRewrapCalls == 1)
+  }
+
+  test("technical credential rewrap maps service conflicts to 409") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val service = new AdminService {
+      def listTeams() = IO.pure(List.empty[TeamResponse])
+      def listUsers() = IO.pure(List.empty[AdminUserResponse])
+      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listDatabases() = IO.pure(List.empty[DatabaseResponse])
+      def listTeamDatabaseGrants() =
+        IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
+      def listUserDatabaseAccessExtensions() =
+        IO.pure(List.empty[AdminUserDatabaseAccessExtensionResponse])
+      def createDatabase(request: CreateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = UUID.randomUUID()))
+      def updateDatabase(databaseId: UUID, request: UpdateDatabaseRequest) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def deactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
+      def reactivateDatabase(databaseId: UUID) =
+        IO.pure(sampleDatabaseResponse(id = databaseId))
+      def rewrapTechnicalCredentials() =
+        IO.raiseError(
+          ServiceError.Conflict(
+            "Technical credential rewrap requires a distinct TECHNICAL_CREDENTIALS_PREVIOUS_KEY"
+          )
+        )
+      def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
+        IO.unit
+      def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
+        IO.unit
+      def upsertUserDatabaseAccessExtension(
+          request: UpsertUserDatabaseAccessExtensionRequest
+      ) = IO.unit
+      def deleteUserDatabaseAccessExtension(userId: UUID, databaseId: UUID) =
+        IO.unit
+    }
+
+    for {
+      response <- AdminRoutes
+        .routes(service)
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.POST,
+            uri"/admin/databases/technical-credentials/rewrap"
+          )
+        )
+    } yield expect(response.status == Status.Conflict)
+  }
+
   test("admin database creation returns 400 for malformed JSON") {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
@@ -418,6 +515,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
         IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
       def reactivateDatabase(databaseId: UUID) =
         IO.pure(sampleDatabaseResponse(id = databaseId))
+      def rewrapTechnicalCredentials() =
+        IO.pure(TechnicalCredentialRewrapResponse(0))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -463,6 +562,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
         IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
       def reactivateDatabase(databaseId: UUID) =
         IO.pure(sampleDatabaseResponse(id = databaseId))
+      def rewrapTechnicalCredentials() =
+        IO.pure(TechnicalCredentialRewrapResponse(0))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -503,6 +604,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
         IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
       def reactivateDatabase(databaseId: UUID) =
         IO.pure(sampleDatabaseResponse(id = databaseId))
+      def rewrapTechnicalCredentials() =
+        IO.raiseError(ServiceError.Conflict("rewrap misconfigured"))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.raiseError(ServiceError.Conflict("database inactive"))
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -553,6 +656,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
         IO.pure(sampleDatabaseResponse(id = databaseId, isActive = false))
       def reactivateDatabase(databaseId: UUID) =
         IO.pure(sampleDatabaseResponse(id = databaseId))
+      def rewrapTechnicalCredentials() =
+        IO.pure(TechnicalCredentialRewrapResponse(0))
       def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
         IO.unit
       def deleteTeamDatabaseGrant(teamId: UUID, databaseId: UUID) =
@@ -586,7 +691,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
       deactivateCalls: Ref[IO, Vector[UUID]] =
         Ref.unsafe[IO, Vector[UUID]](Vector.empty),
       reactivateCalls: Ref[IO, Vector[UUID]] =
-        Ref.unsafe[IO, Vector[UUID]](Vector.empty)
+        Ref.unsafe[IO, Vector[UUID]](Vector.empty),
+      rewrapCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0)
   ): AdminService = new AdminService {
     def listTeams() =
       teamCalls.update(_ + 1) *> IO.pure(
@@ -706,6 +812,11 @@ object AdminRoutesSuite extends SimpleIOSuite {
     def reactivateDatabase(databaseId: UUID) =
       reactivateCalls.update(_ :+ databaseId) *> IO.pure(
         sampleDatabaseResponse(id = databaseId)
+      )
+
+    def rewrapTechnicalCredentials() =
+      rewrapCalls.update(_ + 1) *> IO.pure(
+        TechnicalCredentialRewrapResponse(3)
       )
 
     def upsertTeamDatabaseGrant(request: UpsertTeamDatabaseGrantRequest) =
