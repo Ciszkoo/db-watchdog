@@ -43,7 +43,9 @@ RETURNING tac.id,
           d.database_name,
           d.technical_user,
           db_watchdog.decrypt_technical_password(
-            d.technical_password_ciphertext
+            d.technical_password_ciphertext,
+            $4,
+            $5
           )
 `
 

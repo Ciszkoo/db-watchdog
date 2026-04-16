@@ -202,7 +202,9 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 		"d.engine = 'postgres'",
 		"d.deactivated_at IS NULL",
 		"technical_password_ciphertext",
-		"db_watchdog.decrypt_technical_password",
+		"db_watchdog.decrypt_technical_password(",
+		"$4,",
+		"$5",
 		"SET used_at = NOW()",
 		"updated_at = NOW()",
 	}
