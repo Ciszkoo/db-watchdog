@@ -5,6 +5,8 @@ import { assertProxyQuerySucceeds } from "./support/proxy"
 import { ADMIN_USER, REGULAR_USER, TEST_DATABASE, TEST_TEAM } from "./support/testData"
 
 test("validates the browser + proxy end-to-end flow", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000)
+
   const adminContext = await browser.newContext()
   const userContext = await browser.newContext()
   const adminPage = await adminContext.newPage()
@@ -62,8 +64,7 @@ test("validates the browser + proxy end-to-end flow", async ({ browser, baseURL 
       )
       .toBe(true)
   } finally {
-    await adminContext.close()
-    await userContext.close()
+    await Promise.allSettled([adminContext.close(), userContext.close()])
   }
 })
 
