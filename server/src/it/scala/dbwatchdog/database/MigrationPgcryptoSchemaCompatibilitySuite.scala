@@ -14,6 +14,8 @@ import weaver.IOSuite
 
 import dbwatchdog.AppResources
 import dbwatchdog.config.AppConfig
+import dbwatchdog.domain.{CreateDatabase, UpdateDatabase}
+import dbwatchdog.repository.DatabaseRepository
 import dbwatchdog.support.{IntegrationDb, ScalaPostgresContainer}
 
 object MigrationPgcryptoSchemaCompatibilitySuite extends IOSuite {
@@ -98,6 +100,59 @@ object MigrationPgcryptoSchemaCompatibilitySuite extends IOSuite {
         )
       } yield expect(beforeRewrap == ("legacy-secret", true)) and
         expect(afterRewrap == ("legacy-secret", false))
+    }
+  }
+
+  test(
+    "database repository writes stay compatible when pgcrypto lives in public"
+  ) { db =>
+    db.resetLock.permit.use { _ =>
+      given AppConfig = db.config
+      val repo = DatabaseRepository.make
+
+      for {
+        _ <- db.reset
+        inserted <- db.transact(
+          repo.insert(
+            CreateDatabase(
+              engine = "postgres",
+              host = "compatible.internal",
+              port = 5432,
+              technicalUser = "compatible_user",
+              technicalPassword = "initial-secret",
+              databaseName = "compatible_db"
+            )
+          )
+        )
+        updated <- db.transact(
+          repo.update(
+            inserted.id,
+            UpdateDatabase(
+              engine = "postgres",
+              host = "compatible-updated.internal",
+              port = 6432,
+              technicalUser = "updated_user",
+              technicalPassword = "rotated-secret",
+              databaseName = "compatible_reporting"
+            )
+          )
+        )
+        loaded <- db.transact(repo.findById(inserted.id))
+        ciphertext <- db.transact(
+          sql"""
+            SELECT technical_password_ciphertext
+            FROM databases
+            WHERE id = ${inserted.id}
+          """.query[Array[Byte]].unique
+        )
+      } yield expect(inserted.technicalPassword == "initial-secret") and
+        expect(updated.host == "compatible-updated.internal") and
+        expect(updated.port == 6432) and
+        expect(updated.technicalUser == "updated_user") and
+        expect(updated.technicalPassword == "rotated-secret") and
+        expect(updated.databaseName == "compatible_reporting") and
+        expect(loaded.contains(updated)) and
+        expect(ciphertext.nonEmpty)
     }
   }
 

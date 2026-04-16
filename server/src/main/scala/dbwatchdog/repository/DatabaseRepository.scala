@@ -59,11 +59,6 @@ object DatabaseRepository {
   def make(using config: AppConfig): DatabaseRepository =
     new DatabaseRepository {
       private val schemaName = config.db.schema
-      private val technicalCredentialSetting =
-        config.credentialEncryption.sessionSetting
-
-      private val technicalCredentialSettingF =
-        fr"current_setting($technicalCredentialSetting)"
 
       private val returningDatabaseF =
         fr"""
@@ -104,9 +99,8 @@ object DatabaseRepository {
           Fragment.const(columnName) ++ fr")"
 
       private def encryptedPasswordF(password: String): Fragment =
-        Fragment.const(
-          s"$schemaName.pgp_sym_encrypt("
-        ) ++ fr"$password, " ++ technicalCredentialSettingF ++ fr", 'cipher-algo=aes256')"
+        Fragment.const(s"$schemaName.encrypt_technical_password(") ++
+          fr"$password)"
 
       private def technicalPasswordNeedsRewrapF(
           columnName: String
