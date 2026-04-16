@@ -114,6 +114,15 @@ object AdminRoutes {
           }
         }
 
+      case POST -> Root / "admin" / "databases" / "technical-credentials" / "rewrap" as authUser =>
+        dbaOnly(authUser) {
+          handleServiceErrors {
+            adminService
+              .rewrapTechnicalCredentials()
+              .flatMap(response => Ok(response.asJson))
+          }
+        }
+
       case request @ PUT -> Root / "admin" / "team-database-grants" as authUser =>
         dbaOnly(authUser) {
           handleServiceErrors {

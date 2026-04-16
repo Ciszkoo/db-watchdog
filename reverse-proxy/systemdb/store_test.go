@@ -22,7 +22,11 @@ func TestConsumeOTPConsumesMatchingCredential(t *testing.T) {
 	}
 	defer mock.Close()
 
-	store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+	store, err := NewStoreWithDB(
+		mock,
+		"test-technical-credentials-key",
+		"previous-technical-credentials-key",
+	)
 	if err != nil {
 		t.Fatalf("NewStoreWithDB: %v", err)
 	}
@@ -43,6 +47,7 @@ func TestConsumeOTPConsumesMatchingCredential(t *testing.T) {
 			"jane@example.com",
 			"external_db",
 			"test-technical-credentials-key",
+			"previous-technical-credentials-key",
 		).
 		WillReturnRows(
 			pgxmock.NewRows(
@@ -151,7 +156,7 @@ func TestConsumeOTPRejectsInvalidCredentials(t *testing.T) {
 			}
 			defer mock.Close()
 
-			store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+			store, err := NewStoreWithDB(mock, "test-technical-credentials-key", "")
 			if err != nil {
 				t.Fatalf("NewStoreWithDB: %v", err)
 			}
@@ -162,6 +167,7 @@ func TestConsumeOTPRejectsInvalidCredentials(t *testing.T) {
 					testCase.loginIdentifier,
 					testCase.databaseName,
 					"test-technical-credentials-key",
+					"",
 				).
 				WillReturnError(pgx.ErrNoRows)
 
@@ -187,6 +193,7 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 
 	requiredFragments := []string{
 		"set_config('app.technical_credentials_key', $4, false)",
+		"set_config('app.previous_technical_credentials_key', $5, false)",
 		"tac.otp_hash = $1",
 		"tac.used_at IS NULL",
 		"tac.expires_at > NOW()",
@@ -195,7 +202,7 @@ func TestConsumeOTPQueryGuardsRequiredConstraints(t *testing.T) {
 		"d.engine = 'postgres'",
 		"d.deactivated_at IS NULL",
 		"technical_password_ciphertext",
-		"pgp_sym_decrypt",
+		"db_watchdog.decrypt_technical_password",
 		"SET used_at = NOW()",
 		"updated_at = NOW()",
 	}
@@ -216,7 +223,7 @@ func TestEndSessionStoresFinalCounters(t *testing.T) {
 	}
 	defer mock.Close()
 
-	store, err := NewStoreWithDB(mock, "test-technical-credentials-key")
+	store, err := NewStoreWithDB(mock, "test-technical-credentials-key", "")
 	if err != nil {
 		t.Fatalf("NewStoreWithDB: %v", err)
 	}
@@ -251,8 +258,27 @@ func TestNewStoreRejectsMissingTechnicalCredentialsKey(t *testing.T) {
 	}
 	defer mock.Close()
 
-	_, err = NewStoreWithDB(mock, "   ")
+	_, err = NewStoreWithDB(mock, "   ", "")
 	if !errors.Is(err, ErrMissingTechnicalCredentialsKey) {
 		t.Fatalf("expected ErrMissingTechnicalCredentialsKey, got %v", err)
+	}
+}
+
+func TestNewStoreNormalizesBlankPreviousTechnicalCredentialsKey(t *testing.T) {
+	t.Parallel()
+
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("new pool: %v", err)
+	}
+	defer mock.Close()
+
+	store, err := NewStoreWithDB(mock, "test-technical-credentials-key", "   ")
+	if err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+
+	if store.previousTechnicalCredentialsKey != nil {
+		t.Fatalf("expected nil previousTechnicalCredentialsKey, got %v", *store.previousTechnicalCredentialsKey)
 	}
 }

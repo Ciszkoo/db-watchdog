@@ -36,6 +36,24 @@ func TestLoadTechnicalCredentialsKeyFailsWhenMissing(t *testing.T) {
 	}
 }
 
+func TestLoadPreviousTechnicalCredentialsKeyReturnsEnvironmentValue(t *testing.T) {
+	t.Setenv("TECHNICAL_CREDENTIALS_PREVIOUS_KEY", "proxy-previous-key")
+
+	value := loadPreviousTechnicalCredentialsKey()
+	if value != "proxy-previous-key" {
+		t.Fatalf("unexpected previous key value: %q", value)
+	}
+}
+
+func TestLoadPreviousTechnicalCredentialsKeyNormalizesBlankValues(t *testing.T) {
+	t.Setenv("TECHNICAL_CREDENTIALS_PREVIOUS_KEY", "   ")
+
+	value := loadPreviousTechnicalCredentialsKey()
+	if value != "" {
+		t.Fatalf("expected blank previous key to normalize to empty string, got %q", value)
+	}
+}
+
 func TestStartupWarningsIncludePlaintextTargetDatabaseWarning(t *testing.T) {
 	warnings := startupWarnings("postgres://custom.example.test/db_watchdog?sslmode=require")
 

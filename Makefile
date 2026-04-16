@@ -12,6 +12,7 @@ SERVER_DIR := server
 UI_DIR := ui
 
 TECHNICAL_CREDENTIALS_KEY ?= dev-only-technical-credentials-key
+TECHNICAL_CREDENTIALS_PREVIOUS_KEY ?=
 PROXY_TLS_CERT_FILE ?= $(ROOT_DIR)/certs/proxy.crt
 PROXY_TLS_KEY_FILE ?= $(ROOT_DIR)/certs/proxy.key
 
@@ -49,7 +50,7 @@ ui-install: require-pnpm ## Install frontend dependencies with pnpm.
 	cd "$(UI_DIR)" && $(PNPM) install
 
 proxy-run: require-go ## Run the reverse proxy with the default local TLS certificate.
-	cd "$(PROXY_DIR)" && TECHNICAL_CREDENTIALS_KEY="$(TECHNICAL_CREDENTIALS_KEY)" TLS_CERT_FILE="$(PROXY_TLS_CERT_FILE)" TLS_KEY_FILE="$(PROXY_TLS_KEY_FILE)" $(GO) run .
+	cd "$(PROXY_DIR)" && TECHNICAL_CREDENTIALS_KEY="$(TECHNICAL_CREDENTIALS_KEY)" TECHNICAL_CREDENTIALS_PREVIOUS_KEY="$(TECHNICAL_CREDENTIALS_PREVIOUS_KEY)" TLS_CERT_FILE="$(PROXY_TLS_CERT_FILE)" TLS_KEY_FILE="$(PROXY_TLS_KEY_FILE)" $(GO) run .
 
 proxy-test: require-go ## Run reverse proxy Go tests.
 	cd "$(PROXY_DIR)" && $(GO) test ./...
@@ -60,7 +61,7 @@ proxy-build: require-go ## Build the reverse proxy module.
 proxy-check: proxy-test proxy-build ## Validate the reverse proxy module.
 
 server-run: require-sbt ## Run the Scala backend.
-	cd "$(SERVER_DIR)" && TECHNICAL_CREDENTIALS_KEY="$(TECHNICAL_CREDENTIALS_KEY)" $(SBT) run
+	cd "$(SERVER_DIR)" && TECHNICAL_CREDENTIALS_KEY="$(TECHNICAL_CREDENTIALS_KEY)" TECHNICAL_CREDENTIALS_PREVIOUS_KEY="$(TECHNICAL_CREDENTIALS_PREVIOUS_KEY)" $(SBT) run
 
 server-scalafix: require-sbt ## Run Scalafix on the backend project.
 	cd "$(SERVER_DIR)" && $(SBT) scalafix

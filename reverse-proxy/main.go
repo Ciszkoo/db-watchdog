@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +38,7 @@ func main() {
 		slog.Error("missing technical credentials key", "err", err)
 		os.Exit(1)
 	}
+	previousTechnicalCredentialsKey := loadPreviousTechnicalCredentialsKey()
 
 	systemDBPool, err := pgxpool.New(ctx, systemDBDSN())
 	if err != nil {
@@ -57,7 +59,11 @@ func main() {
 	}
 
 	handler := postgres.NewHandler(tlsConfig)
-	store, err := systemdb.NewStore(systemDBPool, technicalCredentialsKey)
+	store, err := systemdb.NewStore(
+		systemDBPool,
+		technicalCredentialsKey,
+		previousTechnicalCredentialsKey,
+	)
 	if err != nil {
 		slog.Error("failed to initialize system db store", "err", err)
 		os.Exit(1)
@@ -223,6 +229,15 @@ func loadTechnicalCredentialsKey() (string, error) {
 	}
 
 	return value, nil
+}
+
+func loadPreviousTechnicalCredentialsKey() string {
+	value := os.Getenv("TECHNICAL_CREDENTIALS_PREVIOUS_KEY")
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+
+	return value
 }
 
 func startupWarnings(systemDBDSN string) []string {

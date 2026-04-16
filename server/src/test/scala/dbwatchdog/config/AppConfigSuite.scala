@@ -55,7 +55,9 @@ object AppConfigSuite extends SimpleIOSuite {
         |}
         |credential-encryption {
         |  key = "test-key"
+        |  previous-key = "old-key"
         |  session-setting = "app.technical_credentials_key"
+        |  previous-session-setting = "app.previous_technical_credentials_key"
         |}
         |""".stripMargin)
       .load[AppConfig]
@@ -73,6 +75,17 @@ object AppConfigSuite extends SimpleIOSuite {
           loaded.exists(
             _.credentialEncryption.sessionSetting ==
               "app.technical_credentials_key"
+          )
+        ) and
+        expect(
+          loaded.exists(
+            _.credentialEncryption.previousKey.contains("old-key")
+          )
+        ) and
+        expect(
+          loaded.exists(
+            _.credentialEncryption.previousSessionSetting ==
+              "app.previous_technical_credentials_key"
           )
         )
     )
@@ -104,7 +117,9 @@ object AppConfigSuite extends SimpleIOSuite {
         |}
         |credential-encryption {
         |  key = "test-key"
+        |  previous-key = "old-key"
         |  session-setting = "app.technical_credentials_key"
+        |  previous-session-setting = "app.previous_technical_credentials_key"
         |}
         |""".stripMargin)
       .load[AppConfig]
@@ -127,7 +142,54 @@ object AppConfigSuite extends SimpleIOSuite {
           loaded.db.url == "jdbc:postgresql://localhost:54320/db_watchdog"
         ) and
         expect(loaded.otp.randomBytes == 18) and
-        expect(loaded.credentialEncryption.requiredKey == "test-key")
+        expect(loaded.credentialEncryption.requiredKey == "test-key") and
+        expect(loaded.credentialEncryption.normalizedPreviousKey.isEmpty)
+    )
+  }
+
+  test("AppConfig.loadWithEnvironment loads the optional previous key") {
+    val loaded = AppConfig.loadWithEnvironment {
+      case "TECHNICAL_CREDENTIALS_KEY"          => Some("test-key")
+      case "TECHNICAL_CREDENTIALS_PREVIOUS_KEY" => Some("old-key")
+      case _                                    => None
+    }
+
+    IO.pure(
+      expect(
+        loaded.credentialEncryption.normalizedPreviousKey.contains("old-key")
+      )
+    )
+  }
+
+  test("blank TECHNICAL_CREDENTIALS_PREVIOUS_KEY is treated as absent") {
+    val loaded = AppConfig.loadWithEnvironment {
+      case "TECHNICAL_CREDENTIALS_KEY"          => Some("test-key")
+      case "TECHNICAL_CREDENTIALS_PREVIOUS_KEY" => Some("   ")
+      case _                                    => None
+    }
+
+    IO.pure(expect(loaded.credentialEncryption.normalizedPreviousKey.isEmpty))
+  }
+
+  test("session init SQL configures current and previous credential settings") {
+    val config = AppConfig.CredentialEncryptionConfig(
+      key = Some("current-key"),
+      previousKey = Some("old-key"),
+      sessionSetting = "app.technical_credentials_key",
+      previousSessionSetting = "app.previous_technical_credentials_key"
+    )
+
+    IO.pure(
+      expect(
+        config.sessionInitSql.contains(
+          "set_config('app.technical_credentials_key', 'current-key', false)"
+        )
+      ) and
+        expect(
+          config.sessionInitSql.contains(
+            "set_config('app.previous_technical_credentials_key', 'old-key', false)"
+          )
+        )
     )
   }
 

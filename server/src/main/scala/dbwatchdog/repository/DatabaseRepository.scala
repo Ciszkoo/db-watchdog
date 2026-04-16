@@ -41,6 +41,8 @@ trait DatabaseRepository extends TableFragment[UUID, Database] {
 
   def reactivate(id: UUID): ConnectionIO[Database]
 
+  def rewrapTechnicalCredentials(): ConnectionIO[Int]
+
   def list: ConnectionIO[List[Database]]
 
   def findById(id: UUID): ConnectionIO[Option[Database]]
@@ -70,7 +72,9 @@ object DatabaseRepository {
                   host,
                   port,
                   technical_user,
-      """ ++ decryptedPasswordF("technical_password_ciphertext") ++ fr""",
+      """ ++ decryptTechnicalPasswordF(
+          "technical_password_ciphertext"
+        ) ++ fr""",
                   database_name,
                   created_at,
                   updated_at,
@@ -84,7 +88,9 @@ object DatabaseRepository {
                databases.host,
                databases.port,
                databases.technical_user,
-      """ ++ decryptedPasswordF("databases.technical_password_ciphertext") ++
+      """ ++ decryptTechnicalPasswordF(
+          "databases.technical_password_ciphertext"
+        ) ++
           fr""",
                databases.database_name,
                databases.created_at,
@@ -93,15 +99,24 @@ object DatabaseRepository {
         FROM
       """ ++ tableF
 
-      private def decryptedPasswordF(columnName: String): Fragment =
-        Fragment.const(s"$schemaName.pgp_sym_decrypt(") ++ Fragment.const(
-          columnName
-        ) ++ fr", " ++ technicalCredentialSettingF ++ fr")::text"
+      private def decryptTechnicalPasswordF(columnName: String): Fragment =
+        Fragment.const(s"$schemaName.decrypt_technical_password(") ++
+          Fragment.const(columnName) ++ fr")"
 
       private def encryptedPasswordF(password: String): Fragment =
         Fragment.const(
           s"$schemaName.pgp_sym_encrypt("
         ) ++ fr"$password, " ++ technicalCredentialSettingF ++ fr", 'cipher-algo=aes256')"
+
+      private def technicalPasswordNeedsRewrapF(
+          columnName: String
+      ): Fragment =
+        Fragment.const(s"$schemaName.technical_password_needs_rewrap(") ++
+          Fragment.const(columnName) ++ fr")"
+
+      private def rewrapTechnicalPasswordF(columnName: String): Fragment =
+        Fragment.const(s"$schemaName.rewrap_technical_password(") ++
+          Fragment.const(columnName) ++ fr")"
 
       def insert(input: CreateDatabase): ConnectionIO[Database] =
         (fr"""
@@ -180,6 +195,19 @@ object DatabaseRepository {
         """ ++ returningDatabaseF)
           .query[Database]
           .unique
+
+      def rewrapTechnicalCredentials(): ConnectionIO[Int] =
+        (fr"""
+          UPDATE
+        """ ++ tableF ++ fr"""
+          SET technical_password_ciphertext =
+        """ ++ rewrapTechnicalPasswordF("technical_password_ciphertext") ++
+          fr""",
+              updated_at = NOW()
+          WHERE
+        """ ++ technicalPasswordNeedsRewrapF(
+            "technical_password_ciphertext"
+          )).update.run
 
       def list: ConnectionIO[List[Database]] =
         (selectDatabaseF ++

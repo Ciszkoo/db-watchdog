@@ -3,6 +3,7 @@ package dbwatchdog.repository
 import java.time.Instant
 import java.util.UUID
 
+import doobie.ConnectionIO
 import doobie.implicits.*
 import doobie.postgres.implicits.*
 
@@ -11,6 +12,9 @@ import dbwatchdog.domain.{CreateDatabase, UpdateDatabase}
 import dbwatchdog.support.PostgresIntegrationSuite
 
 object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
+  private val currentKey = "integration-technical-credentials-key"
+  private val previousKey = "previous-technical-credentials-key"
+
   test("insert persists a database record") { db =>
     withCleanDb(db) { db =>
       given AppConfig = db.config
@@ -122,6 +126,135 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
     }
   }
 
+  test("mixed-key rows stay readable through repository list and findById") {
+    db =>
+      withCleanDb(db) { db =>
+        given AppConfig = db.config
+        val repo = DatabaseRepository.make
+
+        for {
+          currentId <- db.transact(
+            insertEncryptedDatabase(
+              databaseName = "current_mixed_db",
+              technicalUser = "current_user",
+              technicalPassword = "current-secret",
+              encryptionKey = currentKey
+            )
+          )
+          previousId <- db.transact(
+            insertEncryptedDatabase(
+              databaseName = "previous_mixed_db",
+              technicalUser = "previous_user",
+              technicalPassword = "previous-secret",
+              encryptionKey = previousKey
+            )
+          )
+          currentDatabase <- db.transact(
+            withCredentialSettings(db, currentKey, Some(previousKey)) {
+              repo.findById(currentId)
+            }
+          )
+          listedDatabases <- db.transact(
+            withCredentialSettings(db, currentKey, Some(previousKey)) {
+              repo.list
+            }
+          )
+        } yield expect(
+          currentDatabase.exists(_.technicalPassword == "current-secret")
+        ) and expect(
+          listedDatabases
+            .find(_.id == previousId)
+            .exists(_.technicalPassword == "previous-secret")
+        )
+      }
+  }
+
+  test("rewrapTechnicalCredentials updates only previous-key rows") { db =>
+    withCleanDb(db) { db =>
+      given AppConfig = db.config
+      val repo = DatabaseRepository.make
+
+      for {
+        currentId <- db.transact(
+          insertEncryptedDatabase(
+            databaseName = "current_rewrap_db",
+            technicalUser = "current_user",
+            technicalPassword = "current-secret",
+            encryptionKey = currentKey
+          )
+        )
+        previousId <- db.transact(
+          insertEncryptedDatabase(
+            databaseName = "previous_rewrap_db",
+            technicalUser = "previous_user",
+            technicalPassword = "previous-secret",
+            encryptionKey = previousKey
+          )
+        )
+        currentUpdatedAtBefore <- db.transact(databaseUpdatedAt(currentId))
+        previousUpdatedAtBefore <- db.transact(databaseUpdatedAt(previousId))
+        updatedCount <- db.transact(
+          withCredentialSettings(db, currentKey, Some(previousKey)) {
+            repo.rewrapTechnicalCredentials()
+          }
+        )
+        currentUpdatedAtAfter <- db.transact(databaseUpdatedAt(currentId))
+        previousUpdatedAtAfter <- db.transact(databaseUpdatedAt(previousId))
+        currentNeedsRewrap <- db.transact(
+          withCredentialSettings(db, currentKey, Some(previousKey)) {
+            technicalPasswordNeedsRewrap(currentId)
+          }
+        )
+        previousNeedsRewrap <- db.transact(
+          withCredentialSettings(db, currentKey, Some(previousKey)) {
+            technicalPasswordNeedsRewrap(previousId)
+          }
+        )
+        rewrappedPrevious <- db.transact(
+          withCredentialSettings(db, currentKey, None) {
+            repo.findById(previousId)
+          }
+        )
+      } yield expect(updatedCount == 1) and
+        expect(currentUpdatedAtAfter == currentUpdatedAtBefore) and
+        expect(previousUpdatedAtAfter.isAfter(previousUpdatedAtBefore)) and
+        expect(!currentNeedsRewrap) and
+        expect(!previousNeedsRewrap) and
+        expect(
+          rewrappedPrevious.exists(_.technicalPassword == "previous-secret")
+        )
+    }
+  }
+
+  test("rewrapTechnicalCredentials is idempotent at the row-count level") {
+    db =>
+      withCleanDb(db) { db =>
+        given AppConfig = db.config
+        val repo = DatabaseRepository.make
+
+        for {
+          _ <- db.transact(
+            insertEncryptedDatabase(
+              databaseName = "idempotent_rewrap_db",
+              technicalUser = "previous_user",
+              technicalPassword = "previous-secret",
+              encryptionKey = previousKey
+            )
+          )
+          firstRunCount <- db.transact(
+            withCredentialSettings(db, currentKey, Some(previousKey)) {
+              repo.rewrapTechnicalCredentials()
+            }
+          )
+          secondRunCount <- db.transact(
+            withCredentialSettings(db, currentKey, Some(previousKey)) {
+              repo.rewrapTechnicalCredentials()
+            }
+          )
+        } yield expect(firstRunCount == 1) and expect(secondRunCount == 0)
+      }
+  }
+
   private def sampleCreateDatabase(label: String): CreateDatabase = {
     val suffix = s"${label}_${UUID.randomUUID().toString.take(8)}"
 
@@ -134,4 +267,63 @@ object DatabaseRepositoryIntegrationSuite extends PostgresIntegrationSuite {
       databaseName = suffix
     )
   }
+
+  private def withCredentialSettings[A](
+      db: dbwatchdog.support.IntegrationDb,
+      currentKey: String,
+      previousKey: Option[String]
+  )(run: ConnectionIO[A]): ConnectionIO[A] =
+    for {
+      _ <- sql"""
+        SELECT set_config(${db.config.credentialEncryption.sessionSetting}, $currentKey, false),
+               set_config(
+                 ${db.config.credentialEncryption.previousSessionSetting},
+                 ${previousKey.getOrElse("")},
+                 false
+               )
+      """.query[(String, String)].unique.map(_ => ())
+      result <- run
+    } yield result
+
+  private def insertEncryptedDatabase(
+      databaseName: String,
+      technicalUser: String,
+      technicalPassword: String,
+      encryptionKey: String
+  ): ConnectionIO[UUID] =
+    sql"""
+      INSERT INTO databases (
+        engine,
+        host,
+        port,
+        technical_user,
+        technical_password_ciphertext,
+        database_name
+      )
+      VALUES (
+        'postgres',
+        'db.internal',
+        5432,
+        $technicalUser,
+        pgp_sym_encrypt($technicalPassword, $encryptionKey, 'cipher-algo=aes256'),
+        $databaseName
+      )
+      RETURNING id
+    """.query[UUID].unique
+
+  private def technicalPasswordNeedsRewrap(
+      databaseId: UUID
+  ): ConnectionIO[Boolean] =
+    sql"""
+      SELECT technical_password_needs_rewrap(technical_password_ciphertext)
+      FROM databases
+      WHERE id = $databaseId
+    """.query[Boolean].unique
+
+  private def databaseUpdatedAt(databaseId: UUID): ConnectionIO[Instant] =
+    sql"""
+      SELECT updated_at
+      FROM databases
+      WHERE id = $databaseId
+    """.query[Instant].unique
 }

@@ -55,7 +55,9 @@ object AccessServiceSuite extends SimpleIOSuite {
     ),
     credentialEncryption = AppConfig.CredentialEncryptionConfig(
       key = Some("test-technical-credentials-key"),
-      sessionSetting = "app.technical_credentials_key"
+      previousKey = None,
+      sessionSetting = "app.technical_credentials_key",
+      previousSessionSetting = "app.previous_technical_credentials_key"
     )
   )
 
@@ -490,6 +492,9 @@ object AccessServiceSuite extends SimpleIOSuite {
 
     def reactivate(id: UUID) =
       failConnection("reactivate should not be called")
+
+    def rewrapTechnicalCredentials() =
+      failConnection("rewrapTechnicalCredentials should not be called")
 
     def list = databaseIndex.values.toList.pure[ConnectionIO]
 

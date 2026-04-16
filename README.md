@@ -97,6 +97,7 @@ make server-run
 
 By default it listens on `http://localhost:8080`.
 The backend requires `TECHNICAL_CREDENTIALS_KEY`; `make server-run` injects a local development default.
+During a planned technical-credential rotation, the backend can also read the optional `TECHNICAL_CREDENTIALS_PREVIOUS_KEY`.
 
 The backend now validates Keycloak access tokens against the configured JWKS endpoint.
 Caller identity, the required `team` claim, and the `DBA` role all come from validated token claims.
@@ -111,6 +112,7 @@ The backend now also exposes:
 - `PUT /api/v1/admin/databases/{databaseId}`
 - `POST /api/v1/admin/databases/{databaseId}/deactivate`
 - `POST /api/v1/admin/databases/{databaseId}/reactivate`
+- `POST /api/v1/admin/databases/technical-credentials/rewrap`
 - `GET /api/v1/admin/team-database-grants`
 - `PUT /api/v1/admin/team-database-grants`
 - `DELETE /api/v1/admin/team-database-grants/{teamId}/{databaseId}`
@@ -196,6 +198,7 @@ make proxy-run
 It accepts PostgreSQL client connections on local TCP port `5432`, validates OTPs directly against the system database, resolves the backend target from the registered `databases` row, and records session lifecycle rows in `database_sessions`.
 The default `proxy-run` target injects `certs/proxy.crt` and `certs/proxy.key`, and both paths can be overridden with `PROXY_TLS_CERT_FILE=...` and `PROXY_TLS_KEY_FILE=...`.
 The proxy also requires `TECHNICAL_CREDENTIALS_KEY`; `make proxy-run` injects the same local development default used by the backend.
+During a planned technical-credential rotation, the proxy can also read the optional `TECHNICAL_CREDENTIALS_PREVIOUS_KEY`.
 The proxy runtime also reads `SYSTEM_DB_DSN`, which defaults in local development to:
 
 ```bash
@@ -211,6 +214,28 @@ For local smoke tests, the PostgreSQL login shape through the proxy is:
 If a database has been deactivated, previously issued but unused OTPs for that database no longer authenticate through the proxy and still surface as the same generic authentication failure.
 
 Infrastructure commands stay as plain `docker compose ...` from the repository root instead of being mirrored through `make`.
+
+## Technical Credential Key Rotation
+
+The system supports one explicit, operator-driven rotation step for stored technical database credentials.
+Only one temporary fallback key is supported at a time.
+
+Runtime contract:
+
+- `TECHNICAL_CREDENTIALS_KEY` is always the required current key.
+- `TECHNICAL_CREDENTIALS_PREVIOUS_KEY` is optional and should be configured only during rotation.
+- Blank `TECHNICAL_CREDENTIALS_PREVIOUS_KEY` is treated as not configured.
+
+Rotation sequence:
+
+1. Deploy the backend and reverse proxy with `TECHNICAL_CREDENTIALS_KEY=<new-key>` and `TECHNICAL_CREDENTIALS_PREVIOUS_KEY=<old-key>`.
+2. Verify that OTP issuance and proxy login still work while rows may still be encrypted with either key.
+3. Call `POST /api/v1/admin/databases/technical-credentials/rewrap` as a `DBA`.
+4. Confirm the response JSON `{ "rotatedDatabaseCount": <n> }` is non-negative and that a second call returns `0`.
+5. Redeploy the backend and reverse proxy without `TECHNICAL_CREDENTIALS_PREVIOUS_KEY`.
+6. Keep `TECHNICAL_CREDENTIALS_KEY=<new-key>` as the only configured key.
+
+This endpoint is intentionally operator-facing only. No UI flow is added for this rotation step.
 
 ## End-to-End Validation
 
@@ -293,7 +318,7 @@ The backend now persists the shared contract that later proxy work will read and
 - `temporary_access_credentials`
 - `database_sessions`
 
-The backend creates and invalidates OTP credentials in these tables, the reverse proxy consumes them directly at connection time, and successful sessions are now written back for admin review. Both backend and proxy must share the same `TECHNICAL_CREDENTIALS_KEY` so stored database credentials can be encrypted and decrypted consistently.
+The backend creates and invalidates OTP credentials in these tables, the reverse proxy consumes them directly at connection time, and successful sessions are now written back for admin review. Both backend and proxy must share the same `TECHNICAL_CREDENTIALS_KEY` so stored database credentials can be encrypted and decrypted consistently. During an explicit key rotation, both modules can temporarily also share one `TECHNICAL_CREDENTIALS_PREVIOUS_KEY` while the backend rewraps legacy ciphertext through the admin endpoint.
 
 ## CI
 
@@ -316,5 +341,5 @@ The frontend development client includes a backend audience mapper so the backen
 - The backend has a validated auth boundary, token-derived user sync, administrative access APIs, read/write access-state management, effective-access resolution, OTP issuance, and admin session review.
 - The reverse proxy now verifies OTPs against the system database, resolves registered PostgreSQL targets dynamically, records session start/end metadata, and rejects inactive-database OTP consumption through the same generic auth failure path.
 - The frontend now includes both the end-user OTP workflow and an operable `DBA` admin console for database registration, editing, reversible deactivation, access-state review, and session review.
-- Hard delete flows, session filtering/pagination, credential-key rotation, and broader end-to-end coverage remain deferred.
+- Hard delete flows, session filtering/pagination, and broader end-to-end coverage remain deferred.
 - The repository includes local certificates under `certs/` for development use.
