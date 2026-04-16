@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -10,6 +11,24 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { AuthProvider } from "./auth/AuthProvider";
+import { transportWarnings } from "./config";
+
+let hasLoggedTransportWarnings = false
+
+function TransportSecurityWarningsLogger() {
+  useEffect(() => {
+    if (hasLoggedTransportWarnings) {
+      return
+    }
+
+    transportWarnings.forEach((warning) => {
+      console.warn(warning)
+    })
+    hasLoggedTransportWarnings = true
+  }, [])
+
+  return null
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -34,6 +53,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <TransportSecurityWarningsLogger />
         <AuthProvider>{children}</AuthProvider>
         <ScrollRestoration />
         <Scripts />

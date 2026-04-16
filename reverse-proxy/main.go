@@ -63,6 +63,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	for _, warning := range startupWarnings(systemDBDSN()) {
+		slog.Warn(warning)
+	}
+
 	listener, err := net.Listen("tcp", ":5432")
 	if err != nil {
 		slog.Error("failed to listen", "err", err)
@@ -219,4 +223,20 @@ func loadTechnicalCredentialsKey() (string, error) {
 	}
 
 	return value, nil
+}
+
+func startupWarnings(systemDBDSN string) []string {
+	warnings := []string{
+		"Transport security contract: client -> reverse-proxy is protected by TLS configured via TLS_CERT_FILE and TLS_KEY_FILE.",
+		"Transport security warning: reverse-proxy -> target database currently uses plaintext TCP; keep this hop on a trusted private network or protect it with infrastructure outside the application.",
+	}
+
+	if systemDBDSN == defaultSystemDBDSN {
+		warnings = append(
+			warnings,
+			"Transport security warning: the default SYSTEM_DB_DSN uses sslmode=disable and is acceptable only for local development.",
+		)
+	}
+
+	return warnings
 }

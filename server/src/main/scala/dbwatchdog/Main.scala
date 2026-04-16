@@ -24,6 +24,9 @@ object Main extends IOApp {
     } yield ()
 
     for {
+      _ <- config.transportSecurityWarnings.foldLeft(IO.unit) { (io, warning) =>
+        io >> IO.println(warning)
+      }
       _ <- Migration.migrate()
       exitCode <- app.use { _ =>
         IO.println(

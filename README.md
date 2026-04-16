@@ -43,6 +43,48 @@ This starts:
 - external PostgreSQL on `localhost:54321`
 - Keycloak on `http://localhost:8180`
 
+## Transport Security Contract
+
+This section is the source of truth for the current transport-security expectations in `db-watchdog`.
+This PR does not add end-to-end TLS on every hop. It documents the current contract, the local-development allowances, and the known limits of the current version.
+
+### `browser -> ui`
+
+- Current implementation: the UI is commonly served over `http://localhost` in local development.
+- Local development: plain HTTP on `localhost` is acceptable.
+- Deployment requirement: `https` is required outside local development.
+- Not currently implemented by the app itself: certificate provisioning and TLS termination policy for deployed UI hosting.
+
+### `ui -> backend`
+
+- Current implementation: the UI defaults to `http://localhost:8080/api/v1`.
+- Local development: plain HTTP to `localhost:8080` is acceptable.
+- Deployment requirement: `https` is required outside local development.
+- Not currently implemented by the app itself: backend HTTPS listener setup inside the Scala application.
+
+### `backend -> keycloak`
+
+- Current implementation: the backend validates tokens against the configured issuer and JWKS URL, and local development commonly uses `http://localhost:8180`.
+- Local development: plain HTTP to the local Keycloak issuer and JWKS endpoint is acceptable.
+- Deployment requirement: `https` is required for the configured issuer and JWKS URL outside local development.
+- Not currently implemented by the app itself: automatic enforcement beyond startup warnings for insecure non-local Keycloak URLs.
+
+### `client -> reverse-proxy`
+
+- Current implementation: the reverse proxy expects TLS certificates from `TLS_CERT_FILE` and `TLS_KEY_FILE`, and PostgreSQL clients connect over TLS.
+- Local development: a self-signed certificate is acceptable, and local smoke tests should use `sslmode=require`.
+- Deployment requirement: a trusted certificate and correct host verification are required.
+- Not currently implemented by the app itself: automated certificate issuance, trust distribution, or stricter client verification policy beyond the PostgreSQL TLS handshake.
+
+### `reverse-proxy -> target database`
+
+- Current implementation: the reverse proxy connects to the target PostgreSQL database over plain TCP.
+- Local development: this is acceptable only on a trusted local developer network.
+- Deployment requirement: this hop must stay on a trusted private network or be protected by infrastructure outside the application.
+- Not currently implemented by the app itself: native TLS from the proxy to the target database. This is a conscious limitation of the current version.
+
+The backend itself listens over HTTP. Outside local development, TLS termination is expected in front of the Scala application rather than from an HTTPS listener implemented inside the backend.
+
 ## Running Modules
 
 ### Backend
