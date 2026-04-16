@@ -103,8 +103,8 @@ jobs:
       - name: Print E2E logs on failure
         if: failure()
         run: |
-          if [ -d .e2e-tmp ]; then
-            find .e2e-tmp -maxdepth 2 -type f | sort | while read -r file; do
+          if [ -d .e2e-tmp/logs ]; then
+            find .e2e-tmp/logs -type f | sort | while read -r file; do
               echo "===== ${file} ====="
               cat "${file}"
             done

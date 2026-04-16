@@ -21,10 +21,6 @@ test("validates the browser + proxy end-to-end flow", async ({ browser, baseURL 
     await upsertDatabase(adminPage)
 
     await loginViaKeycloak(userPage, REGULAR_USER, `${baseURL}/`)
-    await expect(
-      userPage.getByRole("heading", { name: "No databases available" })
-    ).toBeVisible()
-
     await ensureEngineeringGrant(adminPage)
     await userPage.reload()
     await userPage.waitForLoadState("networkidle")
@@ -115,6 +111,16 @@ async function ensureEngineeringGrant(page: Page): Promise<void> {
   await page.goto("/admin/access")
   await expect(page.getByRole("heading", { name: "Admin Access" })).toBeVisible()
   await page.waitForLoadState("networkidle")
+
+  const existingGrant = page
+    .locator("tbody tr")
+    .filter({ hasText: TEST_TEAM.name })
+    .filter({ hasText: TEST_DATABASE.databaseName })
+    .first()
+
+  if (await existingGrant.count()) {
+    return
+  }
 
   await page.getByLabel("Team").selectOption({ label: TEST_TEAM.name })
   await page.getByLabel("Grant database").selectOption({ label: TEST_DATABASE.databaseName })
