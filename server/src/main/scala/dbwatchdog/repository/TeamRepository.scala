@@ -20,7 +20,7 @@ trait TeamRepository extends TableFragment[UUID, Team] {
   def findById(id: UUID): ConnectionIO[Option[Team]]
   def findByIds(ids: Set[UUID]): ConnectionIO[List[Team]] =
     ids.toList.toNel match
-      case None => List.empty[Team].pure[ConnectionIO]
+      case None              => List.empty[Team].pure[ConnectionIO]
       case Some(nonEmptyIds) =>
         (selectF ++
           fr"WHERE" ++

@@ -49,7 +49,7 @@ trait UserRepository extends TableFragment[UUID, User] {
 
   def findByIds(ids: Set[UUID]): ConnectionIO[List[User]] =
     ids.toList.toNel match
-      case None => List.empty[User].pure[ConnectionIO]
+      case None              => List.empty[User].pure[ConnectionIO]
       case Some(nonEmptyIds) =>
         (selectF ++
           fr"WHERE" ++
