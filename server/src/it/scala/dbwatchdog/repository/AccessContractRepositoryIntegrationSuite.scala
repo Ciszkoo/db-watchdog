@@ -8,9 +8,12 @@ import doobie.postgres.implicits.*
 
 import dbwatchdog.config.AppConfig
 import dbwatchdog.domain.{
+  AdminDatabaseSessionState,
   CreateDatabase,
   CreateDatabaseSessionInput,
   CreateTemporaryAccessCredentialInput,
+  DatabaseSession,
+  ListAdminSessionsQuery,
   UpsertTeamDatabaseGrantInput,
   UpsertUserDatabaseAccessExtensionInput,
   UpsertUserInput
@@ -129,63 +132,245 @@ object AccessContractRepositoryIntegrationSuite
       }
   }
 
-  test("database session repository lists newest sessions first") { db =>
+  test("database session repository paginates stable ordered slices") { db =>
     withCleanDb(db) { db =>
       given AppConfig = db.config
       val seeded = seedAccessGraph(db)
-      val olderStartedAt = Instant.parse("2026-03-01T00:05:00Z")
-      val newerStartedAt = Instant.parse("2026-03-01T00:10:00Z")
-      val expiresAt = Instant.parse("2026-03-01T00:30:00Z")
+      val oldestStartedAt = Instant.parse("2026-03-01T00:05:00Z")
+      val middleStartedAt = Instant.parse("2026-03-01T00:10:00Z")
+      val newestStartedAt = Instant.parse("2026-03-01T00:15:00Z")
 
       for {
         ids <- seeded
-        olderCredential <- db.transact(
-          credentialRepo.create(
-            CreateTemporaryAccessCredentialInput(
-              ids.userId,
-              ids.databaseId,
-              "older-hash",
-              expiresAt
-            )
-          )
+        oldestSession <- createRecordedSession(
+          db,
+          ids.userId,
+          ids.databaseId,
+          "127.0.0.1:5432",
+          oldestStartedAt
         )
-        newerCredential <- db.transact(
-          credentialRepo.create(
-            CreateTemporaryAccessCredentialInput(
-              ids.userId,
-              ids.databaseId,
-              "newer-hash",
-              expiresAt
-            )
-          )
+        middleSession <- createRecordedSession(
+          db,
+          ids.userId,
+          ids.databaseId,
+          "127.0.0.1:5433",
+          middleStartedAt
         )
-        olderSession <- db.transact(
-          sessionRepo.create(
-            CreateDatabaseSessionInput(
-              ids.userId,
-              ids.databaseId,
-              olderCredential.id,
-              "127.0.0.1:5432",
-              olderStartedAt
-            )
-          )
+        newestSession <- createRecordedSession(
+          db,
+          ids.userId,
+          ids.databaseId,
+          "127.0.0.1:5434",
+          newestStartedAt
         )
-        newerSession <- db.transact(
-          sessionRepo.create(
-            CreateDatabaseSessionInput(
-              ids.userId,
-              ids.databaseId,
-              newerCredential.id,
-              "127.0.0.1:5433",
-              newerStartedAt
-            )
-          )
+        firstPage <- db.transact(
+          sessionRepo.listPage(ListAdminSessionsQuery(page = 1, pageSize = 2))
         )
-        sessions <- db.transact(sessionRepo.list)
-      } yield expect(
-        sessions.map(_.id) == List(newerSession.id, olderSession.id)
-      )
+        secondPage <- db.transact(
+          sessionRepo.listPage(ListAdminSessionsQuery(page = 2, pageSize = 2))
+        )
+        totalCount <- db.transact(sessionRepo.count(ListAdminSessionsQuery()))
+      } yield expect(firstPage.map(_.id) == List(newestSession.id, middleSession.id)) and
+        expect(secondPage.map(_.id) == List(oldestSession.id)) and
+        expect(totalCount == 3L)
     }
+  }
+
+  test("database session repository applies each admin review filter independently") {
+    db =>
+      withCleanDb(db) { db =>
+        given AppConfig = db.config
+        val teamAStartedAt = Instant.parse("2026-03-01T10:00:00Z")
+        val teamAClosedStartedAt = Instant.parse("2026-03-01T09:00:00Z")
+        val teamBStartedAt = Instant.parse("2026-03-01T08:00:00Z")
+        val otherDatabaseStartedAt = Instant.parse("2026-03-01T07:00:00Z")
+
+        for {
+          primaryIds <- seedAccessGraph(db)
+          secondaryIds <- seedAccessGraph(db)
+          openPrimary <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5440",
+            teamAStartedAt
+          )
+          closedPrimary <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5441",
+            teamAClosedStartedAt,
+            endedAt = Some(Instant.parse("2026-03-01T09:05:00Z"))
+          )
+          openSecondaryTeam <- createRecordedSession(
+            db,
+            secondaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5442",
+            teamBStartedAt
+          )
+          openSecondaryDatabase <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            secondaryIds.databaseId,
+            "127.0.0.1:5443",
+            otherDatabaseStartedAt
+          )
+          filteredByUser <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                userId = Some(primaryIds.userId),
+                pageSize = 10
+              )
+            )
+          )
+          filteredByTeam <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                teamId = Some(primaryIds.teamId),
+                pageSize = 10
+              )
+            )
+          )
+          filteredByDatabase <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                databaseId = Some(primaryIds.databaseId),
+                pageSize = 10
+              )
+            )
+          )
+          filteredOpen <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                state = AdminDatabaseSessionState.Open,
+                pageSize = 10
+              )
+            )
+          )
+          filteredClosed <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                state = AdminDatabaseSessionState.Closed,
+                pageSize = 10
+              )
+            )
+          )
+          filteredFrom <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                startedFrom = Some(Instant.parse("2026-03-01T08:30:00Z")),
+                pageSize = 10
+              )
+            )
+          )
+          filteredTo <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                startedTo = Some(Instant.parse("2026-03-01T08:30:00Z")),
+                pageSize = 10
+              )
+            )
+          )
+        } yield expect(
+          filteredByUser.map(_.id) == List(
+            openPrimary.id,
+            closedPrimary.id,
+            openSecondaryDatabase.id
+          )
+        ) and
+          expect(
+            filteredByTeam.map(_.id) == List(
+              openPrimary.id,
+              closedPrimary.id,
+              openSecondaryDatabase.id
+            )
+          ) and
+          expect(
+            filteredByDatabase.map(_.id) == List(
+              openPrimary.id,
+              closedPrimary.id,
+              openSecondaryTeam.id
+            )
+          ) and
+          expect(
+            filteredOpen.map(_.id) == List(
+              openPrimary.id,
+              openSecondaryTeam.id,
+              openSecondaryDatabase.id
+            )
+          ) and
+          expect(filteredClosed.map(_.id) == List(closedPrimary.id)) and
+          expect(filteredFrom.map(_.id) == List(openPrimary.id, closedPrimary.id)) and
+          expect(
+            filteredTo.map(_.id) == List(
+              openSecondaryTeam.id,
+              openSecondaryDatabase.id
+            )
+          )
+      }
+  }
+
+  test("database session repository combines team, state, and startedFrom filters") {
+    db =>
+      withCleanDb(db) { db =>
+        given AppConfig = db.config
+
+        for {
+          primaryIds <- seedAccessGraph(db)
+          secondaryIds <- seedAccessGraph(db)
+          expectedSession <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5450",
+            Instant.parse("2026-03-01T11:00:00Z")
+          )
+          _ <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5451",
+            Instant.parse("2026-03-01T07:00:00Z")
+          )
+          _ <- createRecordedSession(
+            db,
+            primaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5452",
+            Instant.parse("2026-03-01T10:00:00Z"),
+            endedAt = Some(Instant.parse("2026-03-01T10:05:00Z"))
+          )
+          _ <- createRecordedSession(
+            db,
+            secondaryIds.userId,
+            primaryIds.databaseId,
+            "127.0.0.1:5453",
+            Instant.parse("2026-03-01T12:00:00Z")
+          )
+          sessions <- db.transact(
+            sessionRepo.listPage(
+              ListAdminSessionsQuery(
+                teamId = Some(primaryIds.teamId),
+                state = AdminDatabaseSessionState.Open,
+                startedFrom = Some(Instant.parse("2026-03-01T08:00:00Z")),
+                pageSize = 10
+              )
+            )
+          )
+          totalCount <- db.transact(
+            sessionRepo.count(
+              ListAdminSessionsQuery(
+                teamId = Some(primaryIds.teamId),
+                state = AdminDatabaseSessionState.Open,
+                startedFrom = Some(Instant.parse("2026-03-01T08:00:00Z"))
+              )
+            )
+          )
+        } yield expect(sessions.map(_.id) == List(expectedSession.id)) and
+          expect(totalCount == 1L)
+      }
   }
 
   test("team, user, and database repositories list and find mirrored records") {
@@ -443,6 +628,46 @@ object AccessContractRepositoryIntegrationSuite
       userId: UUID,
       databaseId: UUID
   )
+
+  private def createRecordedSession(
+      db: dbwatchdog.support.IntegrationDb,
+      userId: UUID,
+      databaseId: UUID,
+      clientAddr: String,
+      startedAt: Instant,
+      endedAt: Option[Instant] = None
+  )(using AppConfig): cats.effect.IO[DatabaseSession] = {
+    val expiresAt = startedAt.plusSeconds(1800)
+
+    for {
+      credential <- db.transact(
+        credentialRepo.create(
+          CreateTemporaryAccessCredentialInput(
+            userId,
+            databaseId,
+            s"otp-hash-$clientAddr-$startedAt",
+            expiresAt
+          )
+        )
+      )
+      session <- db.transact(
+        sessionRepo.create(
+          CreateDatabaseSessionInput(
+            userId,
+            databaseId,
+            credential.id,
+            clientAddr,
+            startedAt
+          )
+        )
+      )
+      recorded <- endedAt match {
+        case Some(value) =>
+          db.transact(sessionRepo.markEnded(session.id, value, 120L, 240L))
+        case None => cats.effect.IO.pure(session)
+      }
+    } yield recorded
+  }
 
   private def credentialUsedAt(
       credentialId: UUID

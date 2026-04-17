@@ -1,19 +1,26 @@
 package dbwatchdog.routes
 
+import java.time.Instant
+import java.util.UUID
+
 import cats.effect.IO
+import cats.syntax.all.*
 import io.circe.syntax.*
 import org.http4s.circe.CirceEntityEncoder.*
 import org.http4s.dsl.io.*
 import org.http4s.server.AuthMiddleware
-import org.http4s.{AuthedRoutes, HttpRoutes}
+import org.http4s.{AuthedRoutes, HttpRoutes, Request}
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
+  AdminDatabaseSessionState,
   CreateDatabaseRequest,
+  ListAdminSessionsQuery,
   UpdateDatabaseRequest,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
+import dbwatchdog.service.ServiceError
 import dbwatchdog.service.AdminService
 
 object AdminRoutes {
@@ -35,10 +42,14 @@ object AdminRoutes {
           }
         }
 
-      case GET -> Root / "admin" / "sessions" as authUser =>
+      case request @ GET -> Root / "admin" / "sessions" as authUser =>
         dbaOnly(authUser) {
           handleServiceErrors {
-            adminService.listSessions().flatMap(sessions => Ok(sessions.asJson))
+            for {
+              query <- decodeListSessionsQuery(request.req)
+              sessions <- adminService.listSessions(query)
+              response <- Ok(sessions.asJson)
+            } yield response
           }
         }
 
@@ -182,4 +193,98 @@ object AdminRoutes {
       adminService: AdminService
   )(using authMiddleware: AuthMiddleware[IO, AuthUser]): HttpRoutes[IO] =
     authMiddleware(authedRoutes(adminService))
+
+  private def decodeListSessionsQuery(
+      request: Request[IO]
+  ): IO[ListAdminSessionsQuery] = {
+    val params = request.uri.query.params
+
+    for {
+      page <- parsePageParam(params.get("page"))
+      pageSize <- parsePageSizeParam(params.get("pageSize"))
+      userId <- parseOptionalUuidParam(params.get("userId"), "userId")
+      teamId <- parseOptionalUuidParam(params.get("teamId"), "teamId")
+      databaseId <- parseOptionalUuidParam(
+        params.get("databaseId"),
+        "databaseId"
+      )
+      state <- parseStateParam(params.get("state"))
+      startedFrom <- parseOptionalInstantParam(
+        params.get("startedFrom"),
+        "startedFrom"
+      )
+      startedTo <- parseOptionalInstantParam(
+        params.get("startedTo"),
+        "startedTo"
+      )
+    } yield ListAdminSessionsQuery(
+      page = page,
+      pageSize = pageSize,
+      userId = userId,
+      teamId = teamId,
+      databaseId = databaseId,
+      state = state,
+      startedFrom = startedFrom,
+      startedTo = startedTo
+    )
+  }
+
+  private def parsePageParam(raw: Option[String]): IO[Int] =
+    parseOptionalIntParam(raw, "page").flatMap {
+      case None => IO.pure(1)
+      case Some(value) if value >= 1 => IO.pure(value)
+      case Some(_) =>
+        IO.raiseError(ServiceError.BadRequest("page must be greater than or equal to 1"))
+    }
+
+  private def parsePageSizeParam(raw: Option[String]): IO[Int] =
+    parseOptionalIntParam(raw, "pageSize").flatMap {
+      case None => IO.pure(25)
+      case Some(value) if value >= 1 && value <= 100 => IO.pure(value)
+      case Some(_) =>
+        IO.raiseError(
+          ServiceError.BadRequest("pageSize must be between 1 and 100")
+        )
+    }
+
+  private def parseOptionalUuidParam(
+      raw: Option[String],
+      fieldName: String
+  ): IO[Option[UUID]] =
+    raw.traverse(parseUuid(_, fieldName))
+
+  private def parseOptionalIntParam(
+      raw: Option[String],
+      fieldName: String
+  ): IO[Option[Int]] =
+    raw.traverse { value =>
+      Either
+        .catchOnly[NumberFormatException](value.toInt)
+        .leftMap(_ => ServiceError.BadRequest(s"Invalid integer for $fieldName"))
+        .liftTo[IO]
+    }
+
+  private def parseOptionalInstantParam(
+      raw: Option[String],
+      fieldName: String
+  ): IO[Option[Instant]] =
+    raw.traverse { value =>
+      Either
+        .catchNonFatal(Instant.parse(value))
+        .leftMap(_ => ServiceError.BadRequest(s"Invalid instant for $fieldName"))
+        .liftTo[IO]
+    }
+
+  private def parseStateParam(
+      raw: Option[String]
+  ): IO[AdminDatabaseSessionState] =
+    raw match {
+      case None => IO.pure(AdminDatabaseSessionState.default)
+      case Some(value) =>
+        AdminDatabaseSessionState
+          .fromString(value)
+          .liftTo[IO](
+            ServiceError.BadRequest("Invalid state")
+          )
+    }
 }

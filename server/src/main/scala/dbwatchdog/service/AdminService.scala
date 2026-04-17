@@ -10,6 +10,7 @@ import doobie.ConnectionIO
 import dbwatchdog.config.AppConfig
 import dbwatchdog.database.Database
 import dbwatchdog.domain.{
+  AdminDatabaseSessionPageResponse,
   AdminDatabaseSessionResponse,
   AdminTeamDatabaseGrantResponse,
   AdminUserDatabaseAccessExtensionResponse,
@@ -18,6 +19,7 @@ import dbwatchdog.domain.{
   CreateDatabaseRequest,
   Database as PersistedDatabase,
   DatabaseResponse,
+  ListAdminSessionsQuery,
   Team,
   TeamResponse,
   TechnicalCredentialRewrapResponse,
@@ -26,14 +28,17 @@ import dbwatchdog.domain.{
   UpsertTeamDatabaseGrantInput,
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionInput,
-  UpsertUserDatabaseAccessExtensionRequest
+  UpsertUserDatabaseAccessExtensionRequest,
+  User
 }
 import dbwatchdog.repository.Repositories
 
 trait AdminService {
   def listTeams(): IO[List[TeamResponse]]
   def listUsers(): IO[List[AdminUserResponse]]
-  def listSessions(): IO[List[AdminDatabaseSessionResponse]]
+  def listSessions(
+      query: ListAdminSessionsQuery
+  ): IO[AdminDatabaseSessionPageResponse]
   def listDatabases(): IO[List[DatabaseResponse]]
   def listTeamDatabaseGrants(): IO[List[AdminTeamDatabaseGrantResponse]]
   def listUserDatabaseAccessExtensions()
@@ -95,15 +100,20 @@ object AdminService {
           } yield responses
         )
 
-      def listSessions(): IO[List[AdminDatabaseSessionResponse]] =
+      def listSessions(
+          query: ListAdminSessionsQuery
+      ): IO[AdminDatabaseSessionPageResponse] =
         db.transact(
           for {
-            sessions <- repos.databaseSessions.list
-            teams <- repos.teams.list
-            users <- repos.users.list
-            databases <- repos.databases.findByIds(
-              sessions.map(_.databaseId).toSet
-            )
+            sessions <- repos.databaseSessions.listPage(query)
+            totalCount <- repos.databaseSessions.count(query)
+            teams <- if sessions.isEmpty then List.empty[Team].pure[ConnectionIO]
+            else repos.teams.list
+            users <- if sessions.isEmpty then List.empty[User].pure[ConnectionIO]
+            else repos.users.list
+            databases <- if sessions.isEmpty then
+              List.empty[PersistedDatabase].pure[ConnectionIO]
+            else repos.databases.findByIds(sessions.map(_.databaseId).toSet)
             teamIndex = teams.map(team => team.id -> team).toMap
             usersWithTeams <- users.traverse { user =>
               teamIndex
@@ -143,7 +153,12 @@ object AdminService {
                 DatabaseResponse.fromDomain(database)
               )
             }
-          } yield responses
+          } yield AdminDatabaseSessionPageResponse(
+            items = responses,
+            page = query.page,
+            pageSize = query.pageSize,
+            totalCount = totalCount
+          )
         )
 
       def listDatabases(): IO[List[DatabaseResponse]] =

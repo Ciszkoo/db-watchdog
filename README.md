@@ -124,8 +124,42 @@ The backend now also exposes:
 - `POST /api/v1/me/databases/{databaseId}/otp`
 
 Database responses never expose `technicalPassword`.
-The backend now issues short-lived OTPs backed by stored SHA-256 hashes, `GET /api/v1/admin/sessions` exposes the recorded proxy sessions for `DBA` review, and inactive databases stay visible in the admin registry while being excluded from effective-access resolution and OTP issuance.
+The backend now issues short-lived OTPs backed by stored SHA-256 hashes, `GET /api/v1/admin/sessions` exposes a paginated and filterable recorded-session review for `DBA` operators, and inactive databases stay visible in the admin registry while being excluded from effective-access resolution and OTP issuance.
 `PUT /api/v1/admin/team-database-grants` and `PUT /api/v1/admin/user-database-access-extensions` now return `409 Conflict` when the target database is inactive.
+
+`GET /api/v1/admin/sessions` accepts these query params:
+
+- `page`: integer, default `1`, must be `>= 1`
+- `pageSize`: integer, default `25`, must be `1..100`
+- `userId`: optional UUID
+- `teamId`: optional UUID
+- `databaseId`: optional UUID
+- `state`: optional `all | open | closed`, default `all`
+- `startedFrom`: optional ISO-8601 instant, inclusive lower bound
+- `startedTo`: optional ISO-8601 instant, exclusive upper bound
+
+It returns:
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "credentialId": "uuid",
+      "clientAddr": "127.0.0.1:5432",
+      "startedAt": "2026-01-05T10:00:00Z",
+      "endedAt": "2026-01-05T10:05:00Z",
+      "bytesSent": 120,
+      "bytesReceived": 240,
+      "user": { "...": "existing AdminUserResponse" },
+      "database": { "...": "existing DatabaseResponse" }
+    }
+  ],
+  "page": 1,
+  "pageSize": 25,
+  "totalCount": 42
+}
+```
 
 Backend tests are split into unit and integration suites:
 
@@ -181,7 +215,7 @@ From the admin UI, a `DBA` can now:
 - review current per-user access extensions
 - add, update, and remove user extensions
 - preview one selected user’s effective access
-- review recorded proxy sessions
+- review recorded proxy sessions with filters and pagination
 
 Inactive databases remain visible in the admin registry and in historical grant/extension tables, but the UI no longer offers them in new grant or extension selectors.
 

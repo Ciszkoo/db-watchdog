@@ -608,8 +608,11 @@ object AccessServiceSuite extends SimpleIOSuite {
       def create(input: dbwatchdog.domain.CreateDatabaseSessionInput) =
         failConnection("create should not be called")
 
-      def list =
-        failConnection("list should not be called")
+      def listPage(query: dbwatchdog.domain.ListAdminSessionsQuery) =
+        failConnection("listPage should not be called")
+
+      def count(query: dbwatchdog.domain.ListAdminSessionsQuery) =
+        failConnection("count should not be called")
 
       def markEnded(
           id: UUID,

@@ -127,6 +127,31 @@ const inactiveDatabase = {
   isActive: false,
 }
 
+const sessionA = {
+  id: "session-a",
+  credentialId: "credential-a",
+  clientAddr: "127.0.0.1:5432",
+  startedAt: "2026-01-05T10:00:00Z",
+  endedAt: "2026-01-05T10:05:00Z",
+  bytesSent: 120,
+  bytesReceived: 240,
+  user: userA,
+  database: databaseA,
+}
+
+const sessionB = {
+  ...sessionA,
+  id: "session-b",
+  credentialId: "credential-b",
+  clientAddr: "127.0.0.1:5433",
+  startedAt: "2026-01-04T09:00:00Z",
+  endedAt: null,
+  bytesSent: null,
+  bytesReceived: null,
+  user: userB,
+  database: inactiveDatabase,
+}
+
 const defaultAuthContext: AuthContextType = {
   isAuthenticated: true,
   isLoading: false,
@@ -187,19 +212,7 @@ describe("admin routes", () => {
     ])
     upsertExtensionMock.mockResolvedValue(undefined)
     deleteExtensionMock.mockResolvedValue(undefined)
-    listSessionsMock.mockResolvedValue([
-      {
-        id: "session-a",
-        credentialId: "credential-a",
-        clientAddr: "127.0.0.1:5432",
-        startedAt: "2026-01-05T10:00:00Z",
-        endedAt: "2026-01-05T10:05:00Z",
-        bytesSent: 120,
-        bytesReceived: 240,
-        user: userA,
-        database: databaseA,
-      },
-    ])
+    listSessionsMock.mockResolvedValue(makeSessionPage())
     getEffectiveAccessForUserMock.mockResolvedValue([
       {
         databaseId: databaseA.id,
@@ -752,19 +765,165 @@ describe("admin routes", () => {
     expect(extensionOptions.map(option => option.textContent)).toEqual(["analytics"])
   })
 
-  it("renders a populated session review table", async () => {
+  it("renders a populated paginated session review table", async () => {
     renderApp("/admin/sessions")
 
     expect(await screen.findByText("127.0.0.1:5432")).toBeInTheDocument()
     expect(screen.getByText("alex@example.com")).toBeInTheDocument()
+    expect(screen.getByText("Showing 1-1 of 1")).toBeInTheDocument()
+    expect(listTeamsMock).toHaveBeenCalledTimes(1)
+    expect(listUsersMock).toHaveBeenCalledTimes(1)
+    expect(listDatabasesMock).toHaveBeenCalledTimes(1)
+    expect(listSessionsMock).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 25,
+      state: "all",
+    })
   })
 
   it("renders the empty session review state", async () => {
-    listSessionsMock.mockResolvedValueOnce([])
+    listSessionsMock.mockResolvedValueOnce(makeSessionPage({ items: [], totalCount: 0 }))
 
     renderApp("/admin/sessions")
 
     expect(await screen.findByText("No recorded sessions")).toBeInTheDocument()
+  })
+
+  it("applies filters with the expected API params", async () => {
+    listDatabasesMock.mockResolvedValueOnce([databaseA, inactiveDatabase])
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ items: [sessionA, sessionB], totalCount: 2 }))
+      .mockResolvedValueOnce(
+        makeSessionPage({
+          items: [sessionB],
+          totalCount: 1,
+        })
+      )
+
+    renderApp("/admin/sessions")
+
+    await screen.findByText("127.0.0.1:5432")
+
+    fireEvent.change(screen.getByLabelText("User"), {
+      target: { value: userA.id },
+    })
+    fireEvent.change(screen.getByLabelText("Team"), {
+      target: { value: teamB.id },
+    })
+    fireEvent.change(screen.getByLabelText("Database"), {
+      target: { value: inactiveDatabase.id },
+    })
+    fireEvent.change(screen.getByLabelText("State"), {
+      target: { value: "closed" },
+    })
+    fireEvent.change(screen.getByLabelText("Started from"), {
+      target: { value: "2026-01-10T09:30" },
+    })
+    fireEvent.change(screen.getByLabelText("Started to"), {
+      target: { value: "2026-01-11T18:45" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }))
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 25,
+        teamId: teamB.id,
+        databaseId: inactiveDatabase.id,
+        state: "closed",
+        startedFrom: new Date("2026-01-10T09:30").toISOString(),
+        startedTo: new Date("2026-01-11T18:45").toISOString(),
+      })
+    )
+  })
+
+  it("reset clears filters and reloads page 1", async () => {
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ page: 2, pageSize: 50, totalCount: 60 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 1, pageSize: 50, totalCount: 1 }))
+
+    renderApp("/admin/sessions?page=2&pageSize=50&teamId=team-a&state=open")
+
+    await screen.findByText("127.0.0.1:5432")
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }))
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 50,
+        state: "all",
+      })
+    )
+
+    expect(screen.getByLabelText("Team")).toHaveValue("")
+    expect(screen.getByLabelText("State")).toHaveValue("all")
+  })
+
+  it("page-size changes reset the session review to page 1", async () => {
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ page: 3, pageSize: 25, totalCount: 75 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 1, pageSize: 100, totalCount: 75 }))
+
+    renderApp("/admin/sessions?page=3&pageSize=25&teamId=team-a")
+
+    await screen.findByText("127.0.0.1:5432")
+
+    fireEvent.change(screen.getByLabelText("Page size"), {
+      target: { value: "100" },
+    })
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 100,
+        teamId: teamA.id,
+        state: "all",
+      })
+    )
+  })
+
+  it("pagination buttons request the correct next and previous pages", async () => {
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ page: 1, pageSize: 25, totalCount: 60 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 2, pageSize: 25, totalCount: 60 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 1, pageSize: 25, totalCount: 60 }))
+
+    renderApp("/admin/sessions")
+
+    await screen.findByText("127.0.0.1:5432")
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenNthCalledWith(2, {
+        page: 2,
+        pageSize: 25,
+        state: "all",
+      })
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }))
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenNthCalledWith(3, {
+        page: 1,
+        pageSize: 25,
+        state: "all",
+      })
+    )
+  })
+
+  it("renders the filtered empty session review state separately", async () => {
+    listSessionsMock.mockResolvedValueOnce(makeSessionPage({ items: [], totalCount: 0 }))
+
+    renderApp("/admin/sessions?state=open")
+
+    expect(
+      await screen.findByText("No sessions match the current filters")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("No recorded sessions")).not.toBeInTheDocument()
   })
 
   it("renders the auth recovery state from an admin route when authentication bootstrap failed", async () => {
@@ -833,5 +992,17 @@ function createAxiosError(status: number, data: string) {
       status,
       data,
     },
+  }
+}
+
+function makeSessionPage(
+  overrides: Partial<Awaited<ReturnType<typeof adminApi.listSessions>>> = {}
+) {
+  return {
+    items: [sessionA],
+    page: 1,
+    pageSize: 25,
+    totalCount: 1,
+    ...overrides,
   }
 }

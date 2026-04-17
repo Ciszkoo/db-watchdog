@@ -48,6 +48,26 @@ export interface AdminDatabaseSessionResponse {
   database: DatabaseResponse
 }
 
+export type AdminDatabaseSessionState = "all" | "open" | "closed"
+
+export interface ListAdminSessionsParams {
+  page?: number
+  pageSize?: number
+  userId?: string
+  teamId?: string
+  databaseId?: string
+  state?: AdminDatabaseSessionState
+  startedFrom?: string
+  startedTo?: string
+}
+
+export interface AdminDatabaseSessionPageResponse {
+  items: AdminDatabaseSessionResponse[]
+  page: number
+  pageSize: number
+  totalCount: number
+}
+
 export interface CreateDatabaseInput {
   engine: string
   host: string
@@ -162,8 +182,15 @@ export const adminApi = {
     )
   },
 
-  async listSessions(): Promise<AdminDatabaseSessionResponse[]> {
-    const response = await apiClient.get<AdminDatabaseSessionResponse[]>("/admin/sessions")
+  async listSessions(
+    params: ListAdminSessionsParams = {}
+  ): Promise<AdminDatabaseSessionPageResponse> {
+    const response = await apiClient.get<AdminDatabaseSessionPageResponse>(
+      "/admin/sessions",
+      {
+        params: compactAdminSessionParams(params),
+      }
+    )
     return response.data
   },
 
@@ -173,4 +200,10 @@ export const adminApi = {
     )
     return response.data
   },
+}
+
+function compactAdminSessionParams(params: ListAdminSessionsParams) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== "")
+  )
 }

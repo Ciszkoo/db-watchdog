@@ -17,6 +17,20 @@ object MigrationIntegrationSuite extends PostgresIntegrationSuite {
     assertRequiredTables(db)
   }
 
+  test("migrations create the admin session review indexes") { db =>
+    for {
+      userStartedAtIndex <- db.indexExists(
+        "database_sessions_user_id_started_at_idx"
+      )
+      databaseStartedAtIndex <- db.indexExists(
+        "database_sessions_database_id_started_at_idx"
+      )
+      usersTeamIdIndex <- db.indexExists("users_team_id_idx")
+    } yield expect(userStartedAtIndex) and
+      expect(databaseStartedAtIndex) and
+      expect(usersTeamIdIndex)
+  }
+
   test("latest schema keeps only encrypted technical credential storage") {
     db =>
       for {

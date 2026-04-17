@@ -5,6 +5,7 @@ import java.util.UUID
 
 import cats.data.{Kleisli, OptionT}
 import cats.effect.{IO, Ref}
+import cats.implicits.*
 import io.circe.Json
 import org.http4s.Method
 import org.http4s.circe.CirceEntityCodec.*
@@ -15,12 +16,15 @@ import weaver.SimpleIOSuite
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
+  AdminDatabaseSessionPageResponse,
   AdminDatabaseSessionResponse,
+  AdminDatabaseSessionState,
   AdminTeamDatabaseGrantResponse,
   AdminUserDatabaseAccessExtensionResponse,
   AdminUserResponse,
   CreateDatabaseRequest,
   DatabaseResponse,
+  ListAdminSessionsQuery,
   TeamResponse,
   TechnicalCredentialRewrapResponse,
   UpdateDatabaseRequest,
@@ -184,7 +188,7 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(observedRewrapCalls == 0)
   }
 
-  test("DBA callers can list recorded sessions") {
+  test("DBA callers can list recorded sessions with the paged response shape") {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()
 
@@ -195,8 +199,71 @@ object AdminRoutesSuite extends SimpleIOSuite {
         .run(Request[IO](Method.GET, uri"/admin/sessions"))
       body <- response.bodyText.compile.string
     } yield expect(response.status == Status.Ok) and
-      expect(body.contains("credentialId")) and
-      expect(body.contains("clientAddr"))
+      expect(body.contains("\"items\"")) and
+      expect(body.contains("\"page\":1")) and
+      expect(body.contains("\"pageSize\":25")) and
+      expect(body.contains("\"totalCount\":1")) and
+      expect(body.contains("credentialId"))
+  }
+
+  test("admin session route forwards valid filter and pagination params") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val expectedQuery = ListAdminSessionsQuery(
+      page = 2,
+      pageSize = 50,
+      userId = Some(UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")),
+      teamId = Some(UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
+      databaseId =
+        Some(UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc")),
+      state = AdminDatabaseSessionState.Open,
+      startedFrom = Some(Instant.parse("2026-01-05T10:00:00Z")),
+      startedTo = Some(Instant.parse("2026-01-06T10:00:00Z"))
+    )
+
+    for {
+      sessionQueries <- Ref.of[IO, Vector[ListAdminSessionsQuery]](Vector.empty)
+      response <- AdminRoutes
+        .routes(recordingAdminService(sessionQueries = sessionQueries))
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.GET,
+            uri"/admin/sessions?page=2&pageSize=50&userId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa&teamId=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&databaseId=cccccccc-cccc-cccc-cccc-cccccccccccc&state=open&startedFrom=2026-01-05T10:00:00Z&startedTo=2026-01-06T10:00:00Z"
+          )
+        )
+      observedQueries <- sessionQueries.get
+    } yield expect(response.status == Status.Ok) and
+      expect(observedQueries == Vector(expectedQuery))
+  }
+
+  test("admin session route returns 400 for invalid query params") {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    val invalidUris = List(
+      uri"/admin/sessions?page=0",
+      uri"/admin/sessions?pageSize=101",
+      uri"/admin/sessions?userId=not-a-uuid",
+      uri"/admin/sessions?teamId=not-a-uuid",
+      uri"/admin/sessions?databaseId=not-a-uuid",
+      uri"/admin/sessions?state=invalid",
+      uri"/admin/sessions?startedFrom=not-an-instant",
+      uri"/admin/sessions?startedTo=not-an-instant"
+    )
+
+    for {
+      sessionCalls <- Ref.of[IO, Int](0)
+      responses <- invalidUris.traverse { uri =>
+        AdminRoutes
+          .routes(recordingAdminService(sessionCalls = sessionCalls))
+          .orNotFound
+          .run(Request[IO](Method.GET, uri))
+      }
+      observedCalls <- sessionCalls.get
+    } yield expect(responses.forall(_.status == Status.BadRequest)) and
+      expect(observedCalls == 0)
   }
 
   test("DBA callers can list current team database grants") {
@@ -418,7 +485,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
-      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listSessions(query: ListAdminSessionsQuery) =
+        IO.pure(emptySessionPage(query))
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def listTeamDatabaseGrants() =
         IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
@@ -501,7 +569,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
-      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listSessions(query: ListAdminSessionsQuery) =
+        IO.pure(emptySessionPage(query))
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def listTeamDatabaseGrants() =
         IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
@@ -548,7 +617,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
-      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listSessions(query: ListAdminSessionsQuery) =
+        IO.pure(emptySessionPage(query))
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def listTeamDatabaseGrants() =
         IO.raiseError(ServiceError.BadRequest("invalid grant state"))
@@ -590,7 +660,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
-      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listSessions(query: ListAdminSessionsQuery) =
+        IO.pure(emptySessionPage(query))
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def listTeamDatabaseGrants() =
         IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
@@ -642,7 +713,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
     val service = new AdminService {
       def listTeams() = IO.pure(List.empty[TeamResponse])
       def listUsers() = IO.pure(List.empty[AdminUserResponse])
-      def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+      def listSessions(query: ListAdminSessionsQuery) =
+        IO.pure(emptySessionPage(query))
       def listDatabases() = IO.pure(List.empty[DatabaseResponse])
       def listTeamDatabaseGrants() =
         IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
@@ -682,6 +754,8 @@ object AdminRoutesSuite extends SimpleIOSuite {
   private def recordingAdminService(
       teamCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       sessionCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
+      sessionQueries: Ref[IO, Vector[ListAdminSessionsQuery]] =
+        Ref.unsafe[IO, Vector[ListAdminSessionsQuery]](Vector.empty),
       teamGrantCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       extensionCalls: Ref[IO, Int] = Ref.unsafe[IO, Int](0),
       createCalls: Ref[IO, Vector[CreateDatabaseRequest]] =
@@ -708,39 +782,48 @@ object AdminRoutesSuite extends SimpleIOSuite {
 
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
 
-    def listSessions() =
-      sessionCalls.update(_ + 1) *> IO.pure(
-        List(
-          AdminDatabaseSessionResponse(
-            id = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd"),
-            credentialId =
-              UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
-            clientAddr = "127.0.0.1:5432",
-            startedAt = createdAt,
-            endedAt = Some(updatedAt),
-            bytesSent = Some(120L),
-            bytesReceived = Some(240L),
-            user = AdminUserResponse(
-              id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-              keycloakId = "kc-123",
-              email = "john@example.com",
-              firstName = "John",
-              lastName = "Doe",
-              team = TeamResponse(
-                id = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
-                name = "backend",
-                createdAt = createdAt,
-                updatedAt = updatedAt
-              ),
-              createdAt = createdAt,
-              updatedAt = updatedAt
+    def listSessions(query: ListAdminSessionsQuery) =
+      sessionCalls.update(_ + 1) *>
+        sessionQueries.update(_ :+ query) *>
+        IO.pure(
+          AdminDatabaseSessionPageResponse(
+            items = List(
+              AdminDatabaseSessionResponse(
+                id = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+                credentialId =
+                  UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                clientAddr = "127.0.0.1:5432",
+                startedAt = createdAt,
+                endedAt = Some(updatedAt),
+                bytesSent = Some(120L),
+                bytesReceived = Some(240L),
+                user = AdminUserResponse(
+                  id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                  keycloakId = "kc-123",
+                  email = "john@example.com",
+                  firstName = "John",
+                  lastName = "Doe",
+                  team = TeamResponse(
+                    id = UUID.fromString(
+                      "ffffffff-ffff-ffff-ffff-ffffffffffff"
+                    ),
+                    name = "backend",
+                    createdAt = createdAt,
+                    updatedAt = updatedAt
+                  ),
+                  createdAt = createdAt,
+                  updatedAt = updatedAt
+                ),
+                database = sampleDatabaseResponse(
+                  id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+                )
+              )
             ),
-            database = sampleDatabaseResponse(
-              id = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-            )
+            page = query.page,
+            pageSize = query.pageSize,
+            totalCount = 1L
           )
         )
-      )
 
     def listDatabases() =
       IO.pure(
@@ -856,5 +939,15 @@ object AdminRoutesSuite extends SimpleIOSuite {
       deactivatedAt =
         if isActive then None else Some(Instant.parse("2024-01-03T00:00:00Z")),
       isActive = isActive
+    )
+
+  private def emptySessionPage(
+      query: ListAdminSessionsQuery
+  ): AdminDatabaseSessionPageResponse =
+    AdminDatabaseSessionPageResponse(
+      items = List.empty[AdminDatabaseSessionResponse],
+      page = query.page,
+      pageSize = query.pageSize,
+      totalCount = 0L
     )
 }

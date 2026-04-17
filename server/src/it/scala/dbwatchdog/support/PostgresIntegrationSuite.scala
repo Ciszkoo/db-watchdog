@@ -62,6 +62,15 @@ final case class IntegrationDb(
           AND column_name = $columnName
       )
     """.query[Boolean].unique.transact(xa)
+
+  def indexExists(indexName: String): IO[Boolean] =
+    sql"""
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = $indexName
+      )
+    """.query[Boolean].unique.transact(xa)
 }
 
 object IntegrationDb {

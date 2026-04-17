@@ -7,6 +7,37 @@ import io.circe.derivation.ConfiguredCodec
 
 import dbwatchdog.domain.Database as PersistedDatabase
 
+enum AdminDatabaseSessionState {
+  case All
+  case Open
+  case Closed
+}
+
+object AdminDatabaseSessionState {
+  val default: AdminDatabaseSessionState = All
+
+  def fromString(raw: String): Option[AdminDatabaseSessionState] =
+    raw.trim.toLowerCase match {
+      case "all"    => Some(All)
+      case "open"   => Some(Open)
+      case "closed" => Some(Closed)
+      case _        => None
+    }
+}
+
+final case class ListAdminSessionsQuery(
+    page: Int = 1,
+    pageSize: Int = 25,
+    userId: Option[UUID] = None,
+    teamId: Option[UUID] = None,
+    databaseId: Option[UUID] = None,
+    state: AdminDatabaseSessionState = AdminDatabaseSessionState.default,
+    startedFrom: Option[Instant] = None,
+    startedTo: Option[Instant] = None
+) {
+  val offset: Int = (page - 1) * pageSize
+}
+
 final case class TeamResponse(
     id: UUID,
     name: String,
@@ -152,6 +183,13 @@ object AdminDatabaseSessionResponse {
       database = database
     )
 }
+
+final case class AdminDatabaseSessionPageResponse(
+    items: List[AdminDatabaseSessionResponse],
+    page: Int,
+    pageSize: Int,
+    totalCount: Long
+) derives ConfiguredCodec
 
 final case class TechnicalCredentialRewrapResponse(
     rotatedDatabaseCount: Int

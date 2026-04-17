@@ -9,6 +9,7 @@ import weaver.SimpleIOSuite
 
 import dbwatchdog.auth.AuthUser
 import dbwatchdog.domain.{
+  AdminDatabaseSessionPageResponse,
   AdminDatabaseSessionResponse,
   AdminTeamDatabaseGrantResponse,
   AdminUserDatabaseAccessExtensionResponse,
@@ -17,6 +18,7 @@ import dbwatchdog.domain.{
   CreateDatabaseRequest,
   DatabaseResponse,
   EffectiveDatabaseAccessResponse,
+  ListAdminSessionsQuery,
   TeamResponse,
   TechnicalCredentialRewrapResponse,
   UpdateDatabaseRequest,
@@ -38,7 +40,15 @@ object RoutesSuite extends SimpleIOSuite {
   private val stubAdminService: AdminService = new AdminService {
     def listTeams() = IO.pure(List.empty[TeamResponse])
     def listUsers() = IO.pure(List.empty[AdminUserResponse])
-    def listSessions() = IO.pure(List.empty[AdminDatabaseSessionResponse])
+    def listSessions(query: ListAdminSessionsQuery) =
+      IO.pure(
+        AdminDatabaseSessionPageResponse(
+          items = List.empty[AdminDatabaseSessionResponse],
+          page = query.page,
+          pageSize = query.pageSize,
+          totalCount = 0L
+        )
+      )
     def listDatabases() = IO.pure(List.empty[DatabaseResponse])
     def listTeamDatabaseGrants() =
       IO.pure(List.empty[AdminTeamDatabaseGrantResponse])
