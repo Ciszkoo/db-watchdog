@@ -120,6 +120,12 @@ export default function AdminSessionsPage() {
           setTeams(nextTeams)
           setUsers(nextUsers)
           setDatabases(nextDatabases)
+
+          if (recoverOutOfRangePage(searchKey, params, nextSessionPage, setSearchParams)) {
+            setHasLoadedReferenceData(true)
+            return
+          }
+
           setSessionPage(nextSessionPage)
           setHasLoadedReferenceData(true)
           return
@@ -128,6 +134,10 @@ export default function AdminSessionsPage() {
         const nextSessionPage = await adminApi.listSessions(params)
 
         if (isCancelled) {
+          return
+        }
+
+        if (recoverOutOfRangePage(searchKey, params, nextSessionPage, setSearchParams)) {
           return
         }
 
@@ -664,4 +674,36 @@ function toDateTimeLocalValue(value: string) {
 
 function pad(value: number) {
   return String(value).padStart(2, "0")
+}
+
+function recoverOutOfRangePage(
+  searchKey: string,
+  params: AppliedSessionParams,
+  sessionPage: AdminDatabaseSessionPageResponse,
+  setSearchParams: ReturnType<typeof useSearchParams>[1]
+) {
+  if (
+    params.page <= 1 ||
+    sessionPage.totalCount === 0 ||
+    sessionPage.items.length > 0
+  ) {
+    return false
+  }
+
+  const lastPage = Math.max(1, Math.ceil(sessionPage.totalCount / sessionPage.pageSize))
+
+  if (params.page <= lastPage) {
+    return false
+  }
+
+  const nextSearchParams = new URLSearchParams(searchKey)
+
+  if (lastPage > 1) {
+    nextSearchParams.set("page", String(lastPage))
+  } else {
+    nextSearchParams.delete("page")
+  }
+
+  setSearchParams(nextSearchParams)
+  return true
 }

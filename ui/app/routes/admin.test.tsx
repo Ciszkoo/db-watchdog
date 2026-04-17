@@ -915,6 +915,26 @@ describe("admin routes", () => {
     )
   })
 
+  it("recovers to the last valid page when the URL points past the end of results", async () => {
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ items: [], page: 4, pageSize: 25, totalCount: 51 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 3, pageSize: 25, totalCount: 51 }))
+
+    renderApp("/admin/sessions?page=4")
+
+    expect(await screen.findByText("127.0.0.1:5432")).toBeInTheDocument()
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenNthCalledWith(2, {
+        page: 3,
+        pageSize: 25,
+        state: "all",
+      })
+    )
+
+    expect(screen.getByText("Showing 51-51 of 51")).toBeInTheDocument()
+  })
+
   it("renders the filtered empty session review state separately", async () => {
     listSessionsMock.mockResolvedValueOnce(makeSessionPage({ items: [], totalCount: 0 }))
 

@@ -391,7 +391,9 @@ object AccessContractRepositoryIntegrationSuite
           users <- db.transact(userRepo.list)
           databases <- db.transact(databaseRepo.list)
           team <- db.transact(teamRepo.findById(ids.teamId))
+          selectedTeams <- db.transact(teamRepo.findByIds(Set(ids.teamId)))
           user <- db.transact(userRepo.findById(ids.userId))
+          selectedUsers <- db.transact(userRepo.findByIds(Set(ids.userId)))
           database <- db.transact(databaseRepo.findById(ids.databaseId))
           selectedDatabases <- db.transact(
             databaseRepo.findByIds(Set(ids.databaseId))
@@ -400,7 +402,9 @@ object AccessContractRepositoryIntegrationSuite
           expect(users.exists(_.id == ids.userId)) and
           expect(databases.exists(_.id == ids.databaseId)) and
           expect(team.exists(_.id == ids.teamId)) and
+          expect(selectedTeams.map(_.id) == List(ids.teamId)) and
           expect(user.exists(_.id == ids.userId)) and
+          expect(selectedUsers.map(_.id) == List(ids.userId)) and
           expect(database.exists(_.id == ids.databaseId)) and
           expect(selectedDatabases.map(_.id) == List(ids.databaseId))
       }

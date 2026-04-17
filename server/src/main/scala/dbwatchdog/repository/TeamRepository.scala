@@ -18,6 +18,16 @@ trait TeamRepository extends TableFragment[UUID, Team] {
   def create(name: String): ConnectionIO[Team]
   def list: ConnectionIO[List[Team]]
   def findById(id: UUID): ConnectionIO[Option[Team]]
+  def findByIds(ids: Set[UUID]): ConnectionIO[List[Team]] =
+    ids.toList.toNel match
+      case None => List.empty[Team].pure[ConnectionIO]
+      case Some(nonEmptyIds) =>
+        (selectF ++
+          fr"WHERE" ++
+          Fragments.in(fr"id", nonEmptyIds) ++
+          fr"ORDER BY name ASC, id ASC")
+          .query[Team]
+          .to[List]
   def findByName(name: String): ConnectionIO[Option[Team]]
   def findOrCreate(name: String): ConnectionIO[Team]
 }
