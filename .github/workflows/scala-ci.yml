@@ -2,12 +2,46 @@ name: Scala CI
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      server_integration: ${{ steps.filter.outputs.server_integration }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            server:
+              - "server/**"
+              - "Makefile"
+              - ".github/workflows/scala-ci.yml"
+            server_integration:
+              - "server/**"
+              - "docker/**"
+              - "docker-compose.yml"
+              - "Makefile"
+              - ".github/workflows/scala-ci.yml"
+
   formatting-and-fix:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -20,26 +54,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: sbt
+          cache-dependency-path: |
+            server/build.sbt
+            server/project/build.properties
+            server/project/**/*.scala
+            server/project/**/*.sbt
 
-      # Install sbt
-      - name: Install sbt
-        run: |
-          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
-          sudo apt-get update
-          sudo apt-get install -y sbt
-
-      # Cache sbt dependencies
-      - name: Cache sbt
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ivy2/cache
-            ~/.sbt
-            ~/.cache/coursier
-          key: sbt-${{ runner.os }}-${{ hashFiles('**/*.sbt', '**/project/*.scala') }}
-          restore-keys: |
-            sbt-${{ runner.os }}-
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       # Run scalafmt check
       - name: Scalafmt check
@@ -54,6 +77,8 @@ jobs:
           sbt "scalafix --check"
 
   server-unit-test:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -65,24 +90,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: sbt
+          cache-dependency-path: |
+            server/build.sbt
+            server/project/build.properties
+            server/project/**/*.scala
+            server/project/**/*.sbt
 
-      - name: Install sbt
-        run: |
-          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
-          sudo apt-get update
-          sudo apt-get install -y sbt
-
-      - name: Cache sbt
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ivy2/cache
-            ~/.sbt
-            ~/.cache/coursier
-          key: sbt-${{ runner.os }}-${{ hashFiles('**/*.sbt', '**/project/*.scala') }}
-          restore-keys: |
-            sbt-${{ runner.os }}-
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Run unit tests
         run: |
@@ -90,6 +106,8 @@ jobs:
           sbt test
 
   server-integration-test:
+    needs: changes
+    if: needs.changes.outputs.server_integration == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -101,24 +119,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: sbt
+          cache-dependency-path: |
+            server/build.sbt
+            server/project/build.properties
+            server/project/**/*.scala
+            server/project/**/*.sbt
 
-      - name: Install sbt
-        run: |
-          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
-          sudo apt-get update
-          sudo apt-get install -y sbt
-
-      - name: Cache sbt
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ivy2/cache
-            ~/.sbt
-            ~/.cache/coursier
-          key: sbt-${{ runner.os }}-${{ hashFiles('**/*.sbt', '**/project/*.scala') }}
-          restore-keys: |
-            sbt-${{ runner.os }}-
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Verify Docker availability
         run: docker info
@@ -129,6 +138,8 @@ jobs:
           sbt "IntegrationTest / test"
 
   server-coverage:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -140,24 +151,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: sbt
+          cache-dependency-path: |
+            server/build.sbt
+            server/project/build.properties
+            server/project/**/*.scala
+            server/project/**/*.sbt
 
-      - name: Install sbt
-        run: |
-          echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x99E82A75642AC823" | sudo apt-key add -
-          sudo apt-get update
-          sudo apt-get install -y sbt
-
-      - name: Cache sbt
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ivy2/cache
-            ~/.sbt
-            ~/.cache/coursier
-          key: sbt-${{ runner.os }}-${{ hashFiles('**/*.sbt', '**/project/*.scala') }}
-          restore-keys: |
-            sbt-${{ runner.os }}-
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Verify Docker availability
         run: docker info

@@ -3,19 +3,38 @@ name: Reverse Proxy CI
 on:
   pull_request:
     branches: ["main"]
-    paths:
-      - "reverse-proxy/**"
-      - "Makefile"
-      - ".github/workflows/reverse-proxy-ci.yml"
   push:
     branches: ["main"]
-    paths:
-      - "reverse-proxy/**"
-      - "Makefile"
-      - ".github/workflows/reverse-proxy-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      reverse_proxy: ${{ steps.filter.outputs.reverse_proxy }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            reverse_proxy:
+              - "reverse-proxy/**"
+              - "Makefile"
+              - ".github/workflows/reverse-proxy-ci.yml"
+
   proxy-test:
+    needs: changes
+    if: needs.changes.outputs.reverse_proxy == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -27,6 +46,7 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
+          cache-dependency-path: reverse-proxy/go.sum
 
       - name: Run tests
         run: |
@@ -34,6 +54,8 @@ jobs:
           go test ./...
 
   proxy-build:
+    needs: changes
+    if: needs.changes.outputs.reverse_proxy == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -45,6 +67,7 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
+          cache-dependency-path: reverse-proxy/go.sum
 
       - name: Build module
         run: |
