@@ -2,6 +2,7 @@ package dbwatchdog.repository
 
 import java.util.UUID
 
+import cats.implicits.*
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
@@ -45,6 +46,17 @@ trait UserRepository extends TableFragment[UUID, User] {
   def list: ConnectionIO[List[User]]
 
   def findById(id: UUID): ConnectionIO[Option[User]]
+
+  def findByIds(ids: Set[UUID]): ConnectionIO[List[User]] =
+    ids.toList.toNel match
+      case None              => List.empty[User].pure[ConnectionIO]
+      case Some(nonEmptyIds) =>
+        (selectF ++
+          fr"WHERE" ++
+          Fragments.in(fr"users.id", nonEmptyIds) ++
+          fr"ORDER BY users.email ASC, users.id ASC")
+          .query[User]
+          .to[List]
 
   def findByKeycloakId(keycloakId: String): ConnectionIO[User]
 }
