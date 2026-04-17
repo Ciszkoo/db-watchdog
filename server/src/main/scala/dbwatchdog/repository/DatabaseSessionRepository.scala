@@ -33,7 +33,9 @@ trait DatabaseSessionRepository extends TableFragment[UUID, DatabaseSession] {
 
   def create(input: CreateDatabaseSessionInput): ConnectionIO[DatabaseSession]
 
-  def listPage(query: ListAdminSessionsQuery): ConnectionIO[List[DatabaseSession]]
+  def listPage(
+      query: ListAdminSessionsQuery
+  ): ConnectionIO[List[DatabaseSession]]
 
   def count(query: ListAdminSessionsQuery): ConnectionIO[Long]
 
@@ -60,8 +62,8 @@ object DatabaseSessionRepository {
         fr"database_sessions.database_id = $databaseId"
       ),
       query.state match {
-        case AdminDatabaseSessionState.All    => None
-        case AdminDatabaseSessionState.Open   =>
+        case AdminDatabaseSessionState.All  => None
+        case AdminDatabaseSessionState.Open =>
           Some(fr"database_sessions.ended_at IS NULL")
         case AdminDatabaseSessionState.Closed =>
           Some(fr"database_sessions.ended_at IS NOT NULL")

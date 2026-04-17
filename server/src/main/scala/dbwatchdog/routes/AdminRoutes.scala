@@ -231,17 +231,19 @@ object AdminRoutes {
 
   private def parsePageParam(raw: Option[String]): IO[Int] =
     parseOptionalIntParam(raw, "page").flatMap {
-      case None => IO.pure(1)
+      case None                      => IO.pure(1)
       case Some(value) if value >= 1 => IO.pure(value)
-      case Some(_) =>
-        IO.raiseError(ServiceError.BadRequest("page must be greater than or equal to 1"))
+      case Some(_)                   =>
+        IO.raiseError(
+          ServiceError.BadRequest("page must be greater than or equal to 1")
+        )
     }
 
   private def parsePageSizeParam(raw: Option[String]): IO[Int] =
     parseOptionalIntParam(raw, "pageSize").flatMap {
-      case None => IO.pure(25)
+      case None                                      => IO.pure(25)
       case Some(value) if value >= 1 && value <= 100 => IO.pure(value)
-      case Some(_) =>
+      case Some(_)                                   =>
         IO.raiseError(
           ServiceError.BadRequest("pageSize must be between 1 and 100")
         )
@@ -260,7 +262,9 @@ object AdminRoutes {
     raw.traverse { value =>
       Either
         .catchOnly[NumberFormatException](value.toInt)
-        .leftMap(_ => ServiceError.BadRequest(s"Invalid integer for $fieldName"))
+        .leftMap(_ =>
+          ServiceError.BadRequest(s"Invalid integer for $fieldName")
+        )
         .liftTo[IO]
     }
 
@@ -271,7 +275,9 @@ object AdminRoutes {
     raw.traverse { value =>
       Either
         .catchNonFatal(Instant.parse(value))
-        .leftMap(_ => ServiceError.BadRequest(s"Invalid instant for $fieldName"))
+        .leftMap(_ =>
+          ServiceError.BadRequest(s"Invalid instant for $fieldName")
+        )
         .liftTo[IO]
     }
 
@@ -279,7 +285,7 @@ object AdminRoutes {
       raw: Option[String]
   ): IO[AdminDatabaseSessionState] =
     raw match {
-      case None => IO.pure(AdminDatabaseSessionState.default)
+      case None        => IO.pure(AdminDatabaseSessionState.default)
       case Some(value) =>
         AdminDatabaseSessionState
           .fromString(value)

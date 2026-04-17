@@ -15,11 +15,11 @@ import dbwatchdog.database.Database
 import dbwatchdog.domain.{
   AdminTeamDatabaseGrantResponse,
   AdminUserDatabaseAccessExtensionResponse,
-  ListAdminSessionsQuery,
   CreateDatabase,
   CreateDatabaseSessionInput,
   Database as PersistedDatabase,
   DatabaseSession,
+  ListAdminSessionsQuery,
   Team,
   TeamDatabaseGrant,
   TechnicalCredentialRewrapResponse,
@@ -181,7 +181,9 @@ object AdminServiceSuite extends SimpleIOSuite {
       sessions.items.map(_.id) == List(newerSession.id, olderSession.id)
     ) and
       expect(sessions.items.headOption.exists(_.user.email == user.email)) and
-      expect(sessions.items.headOption.exists(_.user.team.name == team.name)) and
+      expect(
+        sessions.items.headOption.exists(_.user.team.name == team.name)
+      ) and
       expect(sessions.items.headOption.exists(_.database.id == database.id)) and
       expect(
         sessions.items.headOption.exists(
@@ -193,25 +195,26 @@ object AdminServiceSuite extends SimpleIOSuite {
   test("listSessions returns the requested paging metadata and total count") {
     var observedListQuery = Option.empty[ListAdminSessionsQuery]
     var observedCountQuery = Option.empty[ListAdminSessionsQuery]
-    val query = ListAdminSessionsQuery(page = 2, pageSize = 50, userId = Some(user.id))
+    val query =
+      ListAdminSessionsQuery(page = 2, pageSize = 50, userId = Some(user.id))
     val service = AdminService.make(
-        repos = Repositories(
-          users = stubUserRepository(List(user)),
-          teams = stubTeamRepository(List(team)),
-          databases = stubDatabaseRepository(List(database)),
-          teamDatabaseGrants = noopTeamDatabaseGrantRepository,
-          userDatabaseAccessExtensions =
-            noopUserDatabaseAccessExtensionRepository,
-          temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
-          databaseSessions = stubDatabaseSessionRepository(
-            sessions = List(olderSession),
-            totalCount = 42L,
-            onListPage = observed => observedListQuery = Some(observed),
-            onCount = observed => observedCountQuery = Some(observed)
-          )
-        ),
-        db = pureDatabase
-      )
+      repos = Repositories(
+        users = stubUserRepository(List(user)),
+        teams = stubTeamRepository(List(team)),
+        databases = stubDatabaseRepository(List(database)),
+        teamDatabaseGrants = noopTeamDatabaseGrantRepository,
+        userDatabaseAccessExtensions =
+          noopUserDatabaseAccessExtensionRepository,
+        temporaryAccessCredentials = noopTemporaryAccessCredentialRepository,
+        databaseSessions = stubDatabaseSessionRepository(
+          sessions = List(olderSession),
+          totalCount = 42L,
+          onListPage = observed => observedListQuery = Some(observed),
+          onCount = observed => observedCountQuery = Some(observed)
+        )
+      ),
+      db = pureDatabase
+    )
     for {
       response <- service.listSessions(query)
     } yield expect(response.page == 2) and
@@ -757,17 +760,15 @@ object AdminServiceSuite extends SimpleIOSuite {
       def create(input: CreateDatabaseSessionInput) =
         failConnection("create should not be called")
 
-      def listPage(query: ListAdminSessionsQuery) =
-        {
-          onListPage(query)
-          sessions
-        }.pure[ConnectionIO]
+      def listPage(query: ListAdminSessionsQuery) = {
+        onListPage(query)
+        sessions
+      }.pure[ConnectionIO]
 
-      def count(query: ListAdminSessionsQuery) =
-        {
-          onCount(query)
-          totalCount
-        }.pure[ConnectionIO]
+      def count(query: ListAdminSessionsQuery) = {
+        onCount(query)
+        totalCount
+      }.pure[ConnectionIO]
 
       def markEnded(
           id: UUID,

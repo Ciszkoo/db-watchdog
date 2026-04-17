@@ -107,13 +107,16 @@ object AdminService {
           for {
             sessions <- repos.databaseSessions.listPage(query)
             totalCount <- repos.databaseSessions.count(query)
-            teams <- if sessions.isEmpty then List.empty[Team].pure[ConnectionIO]
-            else repos.teams.list
-            users <- if sessions.isEmpty then List.empty[User].pure[ConnectionIO]
-            else repos.users.list
-            databases <- if sessions.isEmpty then
-              List.empty[PersistedDatabase].pure[ConnectionIO]
-            else repos.databases.findByIds(sessions.map(_.databaseId).toSet)
+            teams <-
+              if sessions.isEmpty then List.empty[Team].pure[ConnectionIO]
+              else repos.teams.list
+            users <-
+              if sessions.isEmpty then List.empty[User].pure[ConnectionIO]
+              else repos.users.list
+            databases <-
+              if sessions.isEmpty then
+                List.empty[PersistedDatabase].pure[ConnectionIO]
+              else repos.databases.findByIds(sessions.map(_.databaseId).toSet)
             teamIndex = teams.map(team => team.id -> team).toMap
             usersWithTeams <- users.traverse { user =>
               teamIndex
