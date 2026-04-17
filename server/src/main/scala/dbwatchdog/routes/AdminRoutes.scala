@@ -20,8 +20,7 @@ import dbwatchdog.domain.{
   UpsertTeamDatabaseGrantRequest,
   UpsertUserDatabaseAccessExtensionRequest
 }
-import dbwatchdog.service.ServiceError
-import dbwatchdog.service.AdminService
+import dbwatchdog.service.{AdminService, ServiceError}
 
 object AdminRoutes {
   def authedRoutes(
