@@ -3,19 +3,38 @@ name: UI CI
 on:
   pull_request:
     branches: ["main"]
-    paths:
-      - "ui/**"
-      - "Makefile"
-      - ".github/workflows/ui-ci.yml"
   push:
     branches: ["main"]
-    paths:
-      - "ui/**"
-      - "Makefile"
-      - ".github/workflows/ui-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ui:
+              - "ui/**"
+              - "Makefile"
+              - ".github/workflows/ui-ci.yml"
+
   ui-lint-typecheck-test:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -48,6 +67,8 @@ jobs:
         run: make ui-test
 
   ui-build:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
 
     steps:
