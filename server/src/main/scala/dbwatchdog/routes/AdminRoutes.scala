@@ -201,6 +201,7 @@ object AdminRoutes {
     for {
       page <- parsePageParam(params.get("page"))
       pageSize <- parsePageSizeParam(params.get("pageSize"))
+      _ <- validatePagingWindow(page, pageSize)
       userId <- parseOptionalUuidParam(params.get("userId"), "userId")
       teamId <- parseOptionalUuidParam(params.get("teamId"), "teamId")
       databaseId <- parseOptionalUuidParam(
@@ -226,6 +227,16 @@ object AdminRoutes {
       startedFrom = startedFrom,
       startedTo = startedTo
     )
+  }
+
+  private def validatePagingWindow(page: Int, pageSize: Int): IO[Unit] = {
+    val offsetLong = (page.toLong - 1L) * pageSize.toLong
+
+    if offsetLong <= Int.MaxValue.toLong then IO.unit
+    else
+      IO.raiseError(
+        ServiceError.BadRequest("page is too large for the requested pageSize")
+      )
   }
 
   private def parsePageParam(raw: Option[String]): IO[Int] =

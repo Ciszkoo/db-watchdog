@@ -35,7 +35,8 @@ final case class ListAdminSessionsQuery(
     startedFrom: Option[Instant] = None,
     startedTo: Option[Instant] = None
 ) {
-  val offset: Int = (page - 1) * pageSize
+  val offset: Int =
+    Math.toIntExact((page.toLong - 1L) * pageSize.toLong)
 }
 
 final case class TeamResponse(

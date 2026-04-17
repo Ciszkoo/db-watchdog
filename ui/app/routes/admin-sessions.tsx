@@ -704,6 +704,6 @@ function recoverOutOfRangePage(
     nextSearchParams.delete("page")
   }
 
-  setSearchParams(nextSearchParams)
+  setSearchParams(nextSearchParams, { replace: true })
   return true
 }

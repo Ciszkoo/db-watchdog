@@ -266,6 +266,28 @@ object AdminRoutesSuite extends SimpleIOSuite {
       expect(observedCalls == 0)
   }
 
+  test(
+    "admin session route returns 400 for overflow-prone pagination windows"
+  ) {
+    given AuthMiddleware[IO, AuthUser] =
+      AuthTestSupport.staticAuthMiddleware()
+
+    for {
+      sessionCalls <- Ref.of[IO, Int](0)
+      response <- AdminRoutes
+        .routes(recordingAdminService(sessionCalls = sessionCalls))
+        .orNotFound
+        .run(
+          Request[IO](
+            Method.GET,
+            uri"/admin/sessions?page=2147483647&pageSize=100"
+          )
+        )
+      observedCalls <- sessionCalls.get
+    } yield expect(response.status == Status.BadRequest) and
+      expect(observedCalls == 0)
+  }
+
   test("DBA callers can list current team database grants") {
     given AuthMiddleware[IO, AuthUser] =
       AuthTestSupport.staticAuthMiddleware()

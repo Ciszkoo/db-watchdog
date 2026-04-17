@@ -48,11 +48,11 @@ trait DatabaseSessionRepository extends TableFragment[UUID, DatabaseSession] {
 }
 
 object DatabaseSessionRepository {
-  private val fromWithUsersF =
-    fr"""
-      FROM database_sessions
-      INNER JOIN users ON users.id = database_sessions.user_id
-    """
+  private def fromF(query: ListAdminSessionsQuery): Fragment =
+    fr"FROM database_sessions" ++
+      query.teamId.fold(Fragment.empty) { _ =>
+        fr"INNER JOIN users ON users.id = database_sessions.user_id"
+      }
 
   private def filtersF(query: ListAdminSessionsQuery): Fragment =
     Fragments.whereAndOpt(
@@ -90,7 +90,7 @@ object DatabaseSessionRepository {
     def listPage(
         query: ListAdminSessionsQuery
     ): ConnectionIO[List[DatabaseSession]] =
-      (fr"SELECT " ++ columnsFullF ++ fromWithUsersF ++ filtersF(query) ++
+      (fr"SELECT " ++ columnsFullF ++ fromF(query) ++ filtersF(query) ++
         fr"""
           ORDER BY database_sessions.started_at DESC, database_sessions.id DESC
           LIMIT ${query.pageSize}
@@ -100,7 +100,7 @@ object DatabaseSessionRepository {
         .to[List]
 
     def count(query: ListAdminSessionsQuery): ConnectionIO[Long] =
-      (fr"SELECT COUNT(*)" ++ fromWithUsersF ++ filtersF(query))
+      (fr"SELECT COUNT(*)" ++ fromF(query) ++ filtersF(query))
         .query[Long]
         .unique
 

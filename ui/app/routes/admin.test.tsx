@@ -935,6 +935,35 @@ describe("admin routes", () => {
     expect(screen.getByText("Showing 51-51 of 51")).toBeInTheDocument()
   })
 
+  it("replaces history when recovering from an out-of-range session page", async () => {
+    listSessionsMock
+      .mockResolvedValueOnce(makeSessionPage({ items: [], page: 4, pageSize: 25, totalCount: 51 }))
+      .mockResolvedValueOnce(makeSessionPage({ page: 3, pageSize: 25, totalCount: 51 }))
+
+    const { router } = renderApp("/admin/sessions?page=4", {}, {
+      initialEntries: ["/admin", "/admin/sessions?page=4"],
+      initialIndex: 1,
+    })
+
+    expect(await screen.findByText("127.0.0.1:5432")).toBeInTheDocument()
+
+    await waitFor(() =>
+      expect(listSessionsMock).toHaveBeenNthCalledWith(2, {
+        page: 3,
+        pageSize: 25,
+        state: "all",
+      })
+    )
+
+    await router.navigate(-1)
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/admin")
+    )
+
+    expect(listSessionsMock).toHaveBeenCalledTimes(2)
+  })
+
   it("renders the filtered empty session review state separately", async () => {
     listSessionsMock.mockResolvedValueOnce(makeSessionPage({ items: [], totalCount: 0 }))
 
@@ -964,7 +993,14 @@ describe("admin routes", () => {
   })
 })
 
-function renderApp(path: string, context: Partial<AuthContextType> = {}) {
+function renderApp(
+  path: string,
+  context: Partial<AuthContextType> = {},
+  options: {
+    initialEntries?: string[]
+    initialIndex?: number
+  } = {}
+) {
   const value: AuthContextType = {
     ...defaultAuthContext,
     ...context,
@@ -994,15 +1030,21 @@ function renderApp(path: string, context: Partial<AuthContextType> = {}) {
       },
     ],
     {
-      initialEntries: [path],
+      initialEntries: options.initialEntries ?? [path],
+      initialIndex: options.initialIndex,
     }
   )
 
-  return render(
+  const view = render(
     <AuthContext.Provider value={value}>
       <RouterProvider router={router} />
     </AuthContext.Provider>
   )
+
+  return {
+    ...view,
+    router,
+  }
 }
 
 function createAxiosError(status: number, data: string) {
